@@ -94,7 +94,7 @@ def parse_trace(lines):
     for line in lines:
         if line.startswith("C1B_PREDICTOR "):
             result["predictor"].append(line)
-        elif line.startswith("C1B_ROOT_STEP "):
+        elif line.startswith("C1B_ROOT_STEP ") or line.startswith("C1B_ROOT_MV_STEP "):
             result["root_steps"].append(line)
         elif line.startswith("C1B_ROOT_ENCLOSURE "):
             result["root_enclosure"].append(line)
@@ -141,6 +141,28 @@ def slab_payload(slab):
     }
 
 
+def serialize_mv_step(step):
+    def rr(pair):
+        return None if pair is None else [persistence.rational_text(pair[0]), persistence.rational_text(pair[1])]
+    return {
+        "step": int(step["step"]),
+        "T_k": rr(step["T_k"]),
+        "t_ref": persistence.rational_text(step["t_ref"]),
+        "lambda_c": persistence.rational_text(step["lambda_c"]),
+        "G0": step["G0"],
+        "Gt": step["Gt"],
+        "Gl": step["Gl"],
+        "Gpar": step["Gpar"],
+        "N_k": step["N_k"],
+        "T_next": rr(step["T_next"]),
+        "width": persistence.rational_text(step["width"]),
+        "division_guard": bool(step["division_guard"]),
+        "gt_charts": {str(k): int(v) for k, v in step["gt_charts"].items()},
+        "gl_stats": {str(k): int(v) for k, v in step["gl_stats"].items()},
+        "step_work": int(step["step_work"]),
+    }
+
+
 def serialize_record(rec, tc, mode, work, reason, trace):
     if rec is None:
         return {
@@ -157,6 +179,8 @@ def serialize_record(rec, tc, mode, work, reason, trace):
             "work_total": int(sum(work.values())),
             "reason": reason,
             "trace": trace,
+            "root_mv_steps": [],
+            "root_reason": None,
         }
     return {
         "predictor_mode": rec["mode"],
@@ -166,7 +190,9 @@ def serialize_record(rec, tc, mode, work, reason, trace):
         "right_clamp": bool(rec["right_clamp"]),
         "corner_hull": int(rec["corner_hull"]),
         "tube_stage": rec["tube_stage"],
-        "sup_error": persistence.rational_text(rec["sup_error"]),
+        "sup_error": None if rec["sup_error"] is None else persistence.rational_text(rec["sup_error"]),
+        "root_mv_steps": [serialize_mv_step(x) for x in rec.get("root_steps", [])],
+        "root_reason": rec.get("root_reason"),
         "middle_partition": [
             [kind, persistence.rational_text(lo), persistence.rational_text(hi)]
             for kind, lo, hi in rec["pieces"]
@@ -210,7 +236,7 @@ def replay(kernel, records):
 def estimates(kernel):
     predictor = 513 * 2 * kernel.PRED_SCAN_PANELS
     t0 = 8 * 4 * 4096 + 2 * 4 * 4096
-    root = kernel.ROOT_STEPS * kernel.ROOT_LBOXES * kernel.ROOT_PANELS
+    root = kernel.ROOT_MV_STEPS * (kernel.ROOT_G_PANELS + kernel.ROOT_GT_PANELS + kernel.ROOT_GL_PANELS)
     e0 = kernel.E0_TBOXES * kernel.E0_LBOXES * kernel.E_STAGES[0][1]
     early = kernel.N_COARSE * (predictor + t0 + root + e0)
     no_refine_late = kernel.N_COARSE * (
@@ -238,7 +264,13 @@ def header_payload(kernel, lineage, pins, identity):
         "lambda_domain": [persistence.rational_text(kernel.L_LO), persistence.rational_text(kernel.L_HI)],
         "stages": {
             "T": [list(x) for x in kernel.T_STAGES],
-            "ROOT": [kernel.ROOT_STEPS, kernel.ROOT_LBOXES, kernel.ROOT_PANELS],
+            "ROOT_MV": {
+                "steps": kernel.ROOT_MV_STEPS,
+                "g_panels": kernel.ROOT_G_PANELS,
+                "gt_panels": kernel.ROOT_GT_PANELS,
+                "gl_panels": kernel.ROOT_GL_PANELS,
+                "target": persistence.rational_text(kernel.ROOT_TARGET),
+            },
             "E": [list(x) for x in kernel.E_STAGES],
         },
         "caps": {

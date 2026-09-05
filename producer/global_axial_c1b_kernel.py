@@ -16,6 +16,7 @@ from pathlib import Path
 from flint import arb, ctx
 
 from producer import global_axial_c0_producer as base
+from producer import c0a_four_group_v2 as grouped
 from producer.global_axial_c0_producer_v2 import _g_density_stable
 from producer.monotone_tube_refinement_producer import _ordinary as _gt_ordinary
 from producer.monotone_tube_refinement_producer import _corner as _gt_corner
@@ -28,7 +29,8 @@ MAX_DEPTH, MAX_ACCEPTED, MAX_ATTEMPTED = 3, 1120, 2100
 T_LO, T_MID_HI, T_HI = Fraction(1, 2), Fraction(31, 32), Fraction(1)
 W0, PRED_ACCEPT, ROOT_TARGET = Fraction(1, 16), Fraction(1, 64), Fraction(1, 128)
 T_STAGES = (("T0", 8, 4, 4096), ("T1", 16, 8, 4096), ("T2", 32, 16, 8192))
-ROOT_STEPS, ROOT_LBOXES, ROOT_PANELS = 12, 16, 8192
+ROOT_MV_STEPS = 8
+ROOT_G_PANELS, ROOT_GT_PANELS, ROOT_GL_PANELS = 32768, 8192, 8192
 E0_TBOXES, E0_LBOXES = 24, 8
 E_STAGES = (("E0", 1024), ("E1", 2048), ("E2", 4096))
 E_BOX_CAP = 4096
@@ -101,6 +103,58 @@ def gt_box(tl, tr, ll, lr, panels):
         charts[chart] += 1
         z += sum(terms, arb(0)) * (bb-aa)
     return z, dict(charts), panels
+
+def _glam_density(s, t, lam, stats):
+    s, x, mu, e, A, d, d2, gamma, u, l2, q, sq, w, w2, N, M, P, Q = grouped._geometry(s, t, lam)
+    R, Rg, _, _ = base._R_bundle(u, gamma, stats)
+    wl_over_w = lam * e / w2
+    gamma_lam = gamma * (1 / lam - wl_over_w - lam * d2 / q)
+    L = lam / (w * q * sq)
+    N_lam = -2 * lam * (mu * d2 + A * d)
+    L_lam = L * (1 / lam - wl_over_w - 3 * lam * d2 / q)
+    gt = L * N
+    gt_lam = L_lam * N + L * N_lam
+    return s * (2 * mu * R * gamma_lam - 2 * A * (Rg * gamma_lam * gt + R * gt_lam))
+
+def glam_box(tl, tr, ll, lr, panels):
+    grid, root = base._partition(panels)
+    t, lam = interval(tl, tr), interval(ll, lr)
+    stats = {"series": 0, "direct": 0, "series_hits_moving_u0": 0, "chart_unresolved": 0}
+    z = arb(0)
+    for a, b in zip(grid, grid[1:]):
+        aa = root if a == base.SQRT2 else base._point(a)
+        bb = root if b == base.SQRT2 else base._point(b)
+        z += _glam_density(base._box(aa, bb), t, lam, stats) * (bb-aa)
+    return z, stats, panels
+
+def _arb_exact_fraction(x):
+    if not x.is_exact():
+        raise RuntimeError("ROOT_NONEXACT_ARB_BOUND")
+    mantissa, exponent = x.man_exp()
+    if exponent >= 0:
+        return Fraction(int(mantissa) * (1 << int(exponent)), 1)
+    return Fraction(int(mantissa), 1 << int(-exponent))
+
+def _arb_snapshot(x):
+    return {
+        "mid": x.mid().str(50),
+        "rad": x.rad().str(50),
+        "lower": x.lower().str(50),
+        "upper": x.upper().str(50),
+    }
+
+def _newton_candidate(t_ref, gpar, gt):
+    if not gt.upper() < 0:
+        return None
+    return base._point(t_ref) - gpar / gt
+
+def _intersect_newton(lo, hi, candidate):
+    nlo = _arb_exact_fraction(candidate.lower())
+    nhi = _arb_exact_fraction(candidate.upper())
+    new_lo, new_hi = max(lo, nlo), min(hi, nhi)
+    if new_hi < new_lo:
+        raise RuntimeError("ROOT_EMPTY_INTERSECTION")
+    return new_lo, new_hi
 
 def bob_preflight():
     data = BOB_RECEIPT.read_bytes()
@@ -204,40 +258,75 @@ def tube_first_pass(slab, tc):
 
 def root_localize(slab, tm, tp):
     lo, hi, work = tm, tp, 0
+    lambda_c = (slab.ll + slab.lr) / 2
+    lambda_c_ball = base._point(lambda_c)
+    dlambda = interval(slab.ll, slab.lr) - lambda_c_ball
     reason = "MAX_STEPS"
-    for step in range(1, ROOT_STEPS + 1):
+    steps = []
+    for step in range(1, ROOT_MV_STEPS + 1):
         if hi - lo <= ROOT_TARGET:
-            reason = "TARGET_WIDTH"; break
-        mid = (lo + hi) / 2
-        vals = []
-        for ll, lr in split(slab.ll, slab.lr, ROOT_LBOXES):
-            try:
-                v, c = g_box(mid, mid, ll, lr, ROOT_PANELS); work += c
-            except (ValueError, ZeroDivisionError):
-                v = None
-            vals.append(v)
-        pos = all(v is not None and v.lower() > 0 for v in vals)
-        neg = all(v is not None and v.upper() < 0 for v in vals)
-        print("C1B_ROOT_STEP", slab.coarse, slab.depth, step, "mid", mid,
-              "all_pos", pos, "all_neg", neg,
-              "min_lower", None if any(v is None for v in vals) else min(v.lower() for v in vals).str(40),
-              "max_upper", None if any(v is None for v in vals) else max(v.upper() for v in vals).str(40))
-        if pos:
-            lo = mid
-        elif neg:
-            hi = mid
-        else:
-            reason = "MID_SIGN_UNRESOLVED"; break
+            reason = "TARGET_WIDTH"
+            break
+        t_ref = (lo + hi) / 2
+        T_k = (lo, hi)
+        try:
+            work += ROOT_G_PANELS
+            G0, _ = g_box(t_ref, t_ref, lambda_c, lambda_c, ROOT_G_PANELS)
+            work += ROOT_GT_PANELS
+            Gt, gt_charts, _ = gt_box(lo, hi, slab.ll, slab.lr, ROOT_GT_PANELS)
+            work += ROOT_GL_PANELS
+            Gl, gl_stats, _ = glam_box(lo, hi, slab.ll, slab.lr, ROOT_GL_PANELS)
+        except (ValueError, ZeroDivisionError):
+            reason = "MV_EVAL_UNRESOLVED"
+            break
+        Gpar = G0 + Gl * dlambda
+        candidate = _newton_candidate(t_ref, Gpar, Gt)
+        guard = candidate is not None
+        if not guard:
+            steps.append({
+                "step": step, "T_k": T_k, "t_ref": t_ref, "lambda_c": lambda_c,
+                "G0": _arb_snapshot(G0), "Gt": _arb_snapshot(Gt),
+                "Gl": _arb_snapshot(Gl), "Gpar": _arb_snapshot(Gpar),
+                "N_k": None, "T_next": None, "width": hi-lo,
+                "division_guard": False, "gt_charts": gt_charts, "gl_stats": gl_stats,
+                "step_work": ROOT_G_PANELS + ROOT_GT_PANELS + ROOT_GL_PANELS,
+            })
+            reason = "GT_DIVISION_GUARD_UNRESOLVED"
+            print("C1B_ROOT_MV_STEP", slab.coarse, slab.depth, step,
+                  "guard", False, "T_k", T_k, "t_ref", t_ref, "lambda_c", lambda_c)
+            break
+        new_lo, new_hi = _intersect_newton(lo, hi, candidate)
+        step_rec = {
+            "step": step, "T_k": T_k, "t_ref": t_ref, "lambda_c": lambda_c,
+            "G0": _arb_snapshot(G0), "Gt": _arb_snapshot(Gt),
+            "Gl": _arb_snapshot(Gl), "Gpar": _arb_snapshot(Gpar),
+            "N_k": _arb_snapshot(candidate), "T_next": (new_lo, new_hi),
+            "width": new_hi-new_lo, "division_guard": True,
+            "gt_charts": gt_charts, "gl_stats": gl_stats,
+            "step_work": ROOT_G_PANELS + ROOT_GT_PANELS + ROOT_GL_PANELS,
+        }
+        steps.append(step_rec)
+        print("C1B_ROOT_MV_STEP", slab.coarse, slab.depth, step,
+              "guard", True, "T_k", T_k, "t_ref", t_ref, "lambda_c", lambda_c,
+              "T_next", (new_lo, new_hi), "width", new_hi-new_lo,
+              "G0", G0.str(40), "Gt", Gt.str(40), "Gl", Gl.str(40),
+              "Gpar", Gpar.str(40), "N_k", candidate.str(40))
+        lo, hi = new_lo, new_hi
+        if hi - lo <= ROOT_TARGET:
+            reason = "TARGET_WIDTH"
+            break
     ok = hi - lo <= ROOT_TARGET
     print("C1B_ROOT_ENCLOSURE", "PASS" if ok else "UNRESOLVED",
           slab.coarse, slab.depth, "T_star", (lo, hi), "width", hi-lo, "reason", reason)
-    return ok, (lo, hi), work
+    return ok, (lo, hi), work, steps, reason
 
 def predictor_accept(tc, root):
-    err = max(abs(tc-root[0]), abs(tc-root[1]))
+    representative = (root[0] + root[1]) / 2
+    err = abs(tc - representative)
     ok = err <= PRED_ACCEPT
     print("C1B_PREDICTOR_ACCEPT", "PASS" if ok else "FAIL",
-          "tc", tc, "T_star", root, "sup_error", err, "limit", PRED_ACCEPT)
+          "tc", tc, "T_star", root, "representative", representative,
+          "mid_error", err, "limit", PRED_ACCEPT)
     return ok, err
 
 def _e0_counts(tm, tp):
@@ -328,8 +417,13 @@ def attempt(slab, previous_root):
     if tc is None: return False, None, None, None, work, "PREDICTOR"
     tok, tm, tp, lc, rc, corner, w, tstage = tube_first_pass(slab, tc); work["tube"] += w
     if not tok: return False, None, None, None, work, "TUBE"
-    rok, root, w = root_localize(slab, tm, tp); work["root"] += w
-    if not rok: return False, None, None, None, work, "ROOT"
+    rok, root, w, root_steps, root_reason = root_localize(slab, tm, tp); work["root"] += w
+    if not rok:
+        rec = {"slab":slab, "tc":tc, "mode":mode, "root":root, "sup_error":None,
+               "tm":tm, "tp":tp, "left_clamp":lc, "right_clamp":rc,
+               "corner_hull":corner, "tube_stage":tstage, "pieces":[],
+               "root_steps":root_steps, "root_reason":root_reason}
+        return False, rec, root, tc, work, "ROOT:" + root_reason
     aok, err = predictor_accept(tc, root)
     if not aok: return False, None, None, None, work, "PREDICTOR_ACCEPT"
     eok, w = exterior_cover(slab, tm, tp); work["exterior"] += w
@@ -339,7 +433,8 @@ def attempt(slab, previous_root):
     if not pok: return False, None, None, None, work, "T_PARTITION"
     rec = {"slab":slab, "tc":tc, "mode":mode, "root":root, "sup_error":err,
            "tm":tm, "tp":tp, "left_clamp":lc, "right_clamp":rc,
-           "corner_hull":corner, "tube_stage":tstage, "pieces":pieces}
+           "corner_hull":corner, "tube_stage":tstage, "pieces":pieces,
+           "root_steps":root_steps, "root_reason":root_reason}
     return True, rec, root, tc, work, "PASS"
 
 def preflight():
@@ -353,7 +448,7 @@ def preflight():
     print("PREDICTOR_ACCEPT", PRED_ACCEPT, "ROOT_TARGET", ROOT_TARGET)
     print("CLAMP_RULE", "max(1/2,tc-w0)", "min(1,tc+w0)", "w0", W0)
     print("CORNER_RULE", "tr==1 and first s-panel => corner_hull")
-    print("T_STAGES", T_STAGES, "ROOT", (ROOT_STEPS,ROOT_LBOXES,ROOT_PANELS))
+    print("T_STAGES", T_STAGES, "ROOT_MV", (ROOT_MV_STEPS,ROOT_G_PANELS,ROOT_GT_PANELS,ROOT_GL_PANELS))
     print("E_POLICY", E0_TBOXES, E0_LBOXES, E_STAGES, "cap", E_BOX_CAP)
     print("CAPS", "coarse", N_COARSE, "accepted", MAX_ACCEPTED, "attempted", MAX_ATTEMPTED,
           "max_depth", MAX_DEPTH)
