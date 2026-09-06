@@ -2,7 +2,6 @@
   "checker": {
     "blob_paths": [
       "analysis/c1b_resumable_driver.py",
-      "analysis/c1b_cross_lineage_compare.py",
       "producer/global_axial_c1b_gating.py",
       "checker/global_axial_c1b_gating.py",
       "producer/global_axial_c1b_kernel.py",
@@ -11,7 +10,6 @@
       "checker/global_axial_c1b_checker.py"
     ],
     "expected_blobs": {
-      "analysis/c1b_cross_lineage_compare.py": "71e9f740263c13dcba5db207f7f410e8b6a5cd9d",
       "analysis/c1b_resumable_driver.py": "5fd308bb4c02c6ddbd612ddbedb18f6b9e22bc3d",
       "checker/global_axial_c1b_checker.py": "0760764ef7592be1ddd4ffec3966e9c6ec930a5b",
       "checker/global_axial_c1b_gating.py": "22df684296a71ec4662601b5cff04db22e9b5ccd",
@@ -74,7 +72,6 @@
   "producer": {
     "blob_paths": [
       "analysis/c1b_resumable_driver.py",
-      "analysis/c1b_cross_lineage_compare.py",
       "producer/global_axial_c1b_gating.py",
       "checker/global_axial_c1b_gating.py",
       "producer/global_axial_c1b_kernel.py",
@@ -83,7 +80,6 @@
       "checker/global_axial_c1b_checker.py"
     ],
     "expected_blobs": {
-      "analysis/c1b_cross_lineage_compare.py": "71e9f740263c13dcba5db207f7f410e8b6a5cd9d",
       "analysis/c1b_resumable_driver.py": "5fd308bb4c02c6ddbd612ddbedb18f6b9e22bc3d",
       "checker/global_axial_c1b_checker.py": "0760764ef7592be1ddd4ffec3966e9c6ec930a5b",
       "checker/global_axial_c1b_gating.py": "22df684296a71ec4662601b5cff04db22e9b5ccd",
