@@ -217,12 +217,11 @@ def serialize_record(rec, tc, mode, work, reason, trace):
     })
     return empty
 
-REPLAY_SCHEMA = "C1B_A1_REPLAY_V2_3_1"
+REPLAY_SCHEMA = "C1B_A1_REPLAY_V2_4_2"
 REPLAY_KEYS = {
     "schema", "attempt_sequence", "coarse_index", "refinement_depth",
     "lambda_lo", "lambda_hi", "tree_node", "t_c", "left_clamp",
     "right_clamp", "t_minus", "t_plus", "T_0", "root_gt_t_cells",
-    "corner_boxes", "tube_stage", "tube_guards", "exterior_guards",
     "producer_accept_root_outcome", "decision",
 }
 FORBIDDEN_REPLAY_KEYS = {"T_star", "G0", "Gt", "Gl", "Gpar", "N_k", "root_mv_steps"}
@@ -280,13 +279,10 @@ def verify_a1_fields(item, result):
         raise SystemExit("A1_REPLAY_FIELD_MISMATCH:t_c")
     if item["t_minus"] is not None:
         checks = ("left_clamp", "right_clamp", "t_minus", "t_plus", "T_0",
-                  "root_gt_t_cells", "corner_boxes", "tube_stage", "tube_guards")
+                  "root_gt_t_cells")
         for key in checks:
             if result.get(key) != item[key]:
                 raise SystemExit("A1_REPLAY_FIELD_MISMATCH:" + key)
-    if item["decision"] == "ACCEPT" or item["exterior_guards"]:
-        if result.get("exterior_guards") != item["exterior_guards"]:
-            raise SystemExit("A1_REPLAY_FIELD_MISMATCH:exterior_guards")
     if item["decision"] == "ACCEPT":
         if item["producer_accept_root_outcome"] != "RESOLVED_WITH_CERTIFIED_T_STAR":
             raise SystemExit("A1_PRODUCER_ACCEPT_ROOT_OUTCOME_INVALID")

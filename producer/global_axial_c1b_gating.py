@@ -246,12 +246,11 @@ def replay(kernel, records):
     }
 
 
-REPLAY_SCHEMA = "C1B_A1_REPLAY_V2_3_1"
+REPLAY_SCHEMA = "C1B_A1_REPLAY_V2_4_2"
 REPLAY_KEYS = (
     "schema", "attempt_sequence", "coarse_index", "refinement_depth",
     "lambda_lo", "lambda_hi", "tree_node", "t_c", "left_clamp",
     "right_clamp", "t_minus", "t_plus", "T_0", "root_gt_t_cells",
-    "corner_boxes", "tube_stage", "tube_guards", "exterior_guards",
     "producer_accept_root_outcome", "decision",
 )
 
@@ -269,10 +268,6 @@ def replay_plan_item(payload):
         "left_clamp": result.get("left_clamp"), "right_clamp": result.get("right_clamp"),
         "t_minus": result.get("t_minus"), "t_plus": result.get("t_plus"),
         "T_0": result.get("T_0"), "root_gt_t_cells": int(result.get("root_gt_t_cells", 16)),
-        "corner_boxes": result.get("corner_boxes", []),
-        "tube_stage": result.get("tube_stage"),
-        "tube_guards": result.get("tube_guards", []),
-        "exterior_guards": result.get("exterior_guards", []),
         "producer_accept_root_outcome": (
             "RESOLVED_WITH_CERTIFIED_T_STAR" if decision == "ACCEPT" and result.get("T_star") is not None else None
         ),

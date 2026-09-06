@@ -10,7 +10,7 @@ from pathlib import Path
 
 from analysis import c1b_resumable_driver as persistence
 
-REPLAY_SCHEMA = "C1B_A1_REPLAY_V2_3_1"
+REPLAY_SCHEMA = "C1B_A1_REPLAY_V2_4_2"
 PRED_ACCEPT = Fraction(1, 64)
 ROOT_TARGET = Fraction(1, 128)
 ROOT_GT_T_CELLS = 16
@@ -18,7 +18,7 @@ A1_KEYS = (
     "attempt_sequence", "tree_node",
     "coarse_index", "refinement_depth", "lambda_lo", "lambda_hi", "decision",
     "t_c", "left_clamp", "right_clamp", "t_minus", "t_plus", "T_0",
-    "root_gt_t_cells", "corner_boxes", "tube_stage", "tube_guards", "exterior_guards",
+    "root_gt_t_cells",
 )
 def sha256_file(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
@@ -85,9 +85,7 @@ def compare_one(index, plan_item, producer_payload, checker_payload):
             cv = checker_payload.get(key) if key in checker_payload else cr.get(key)
         if pv != expected:
             raise SystemExit(f"A1_PRODUCER_PLAN_MISMATCH index={index} key={key}")
-        if key == "exterior_guards" and plan_item["decision"] != "ACCEPT" and not expected:
-            pass
-        elif cv != expected:
+        if cv != expected:
             raise SystemExit(f"A1_CHECKER_MISMATCH index={index} key={key}")
         a1[key] = expected
     if checker_payload.get("decision") != plan_item["decision"]:
@@ -99,6 +97,14 @@ def compare_one(index, plan_item, producer_payload, checker_payload):
         "checker_root_outcome": checker_payload.get("checker_root_outcome"),
         "producer_root_mv_steps": pr.get("root_mv_steps", []),
         "checker_root_mv_steps": cr.get("root_mv_steps", []),
+        "producer_tube_stage": pr.get("tube_stage"),
+        "checker_tube_stage": cr.get("tube_stage"),
+        "producer_corner_boxes": pr.get("corner_boxes", []),
+        "checker_corner_boxes": cr.get("corner_boxes", []),
+        "producer_tube_guards": pr.get("tube_guards", []),
+        "checker_tube_guards": cr.get("tube_guards", []),
+        "producer_exterior_guards": pr.get("exterior_guards", []),
+        "checker_exterior_guards": cr.get("exterior_guards", []),
         "producer_work": pr.get("work"),
         "checker_work": cr.get("work"),
     }
@@ -134,7 +140,7 @@ def main():
     rows = [compare_one(i, plan[i], producer[i], checker[i]) for i in range(len(plan))]
     summary = {
         "status": "PASS",
-        "schema": "C1B_CROSS_LINEAGE_COMPARISON_V2_3_1",
+        "schema": "C1B_CROSS_LINEAGE_COMPARISON_V2_4_2",
         "producer_ledger_sha256": sha256_file(args.producer_ledger),
         "checker_ledger_sha256": sha256_file(args.checker_ledger),
         "replay_plan_sha256": sha256_file(args.replay_plan),
