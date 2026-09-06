@@ -80,10 +80,6 @@ identically to a box closed by (i).
   stage. Guard serialization (_serialize_guard) needs no change.
 - Log line per stage: `C1B_EXTERIOR_MONO <coarse> <depth> <label> attempted <n> closed <m> skipped_cap <k> work <w>
   worst_gt_upper <str50|None> worst_wall <str50|None>`.
-- New result field in slab_record.result: `"exterior_mono": {"attempted","closed","skipped_cap","work"}` (ints).
-  It is REPORTED-layer only; it is NOT added to the replay plan (REPLAY_KEYS unchanged, so
-  REPLAY_PLAN_KEY_ORDER_FAIL / REPLAY_SCHEMA_FAIL semantics are untouched). A.1 carries the rule through
-  exterior_guards, which the checker replay and the comparison stage already compare for exact equality.
 - Preflight prints `MONO_RULE left: Gt<0 on [a,t-]xL and G(t-)>0 => G>0 ; right: Gt<0 on [t+,b]xL and G(t+)<0 => G<0`
   and `MONO_WORK_CAP 1048576`.
 
