@@ -34,10 +34,11 @@ ROOT_GT_T_CELLS = 16
 E0_TBOXES, E0_LBOXES = 24, 8
 E_STAGES = (("E0", 1024), ("E1", 2048), ("E2", 4096))
 E_BOX_CAP = 4096
+MONO_WORK_CAP = 1_048_576
 PRED_GRID_DEN, PRED_SCAN_PANELS = 1024, 256
-ATTEMPT_WORK_CEILING = 23_560_192
-GLOBAL_ATTEMPT_WORK_CEILING = 49_476_403_200
-ACCEPTED_WORK_CEILING = 26_387_415_040
+ATTEMPT_WORK_CEILING = 24_608_768
+GLOBAL_ATTEMPT_WORK_CEILING = 51_678_412_800
+ACCEPTED_WORK_CEILING = 27_561_820_160
 BOB_RECEIPT = Path("analysis/GLOBAL_AXIAL_C1B_BOB_MACHINE_RECEIPT.md")
 BOB_EVIDENCE_HEAD = "25efb59b851eb9d7a3d5ce30309eb8903d976930"
 BOB_CONTRACT_BLOB = "215193e2fc2a1abcf2aee2527c4c2e6f3176ea6c"
@@ -213,6 +214,45 @@ def predictor_selection_controls():
               "selected", tc, mode, "expected", expected_tc, expected_mode)
         if not ok:
             raise SystemExit("PREDICTOR_SELECTION_CONTROL_FAIL")
+
+
+def mono_closure_controls():
+    controls = (
+        ("L", -1, 1, 2, True),
+        ("L", -1, 0, 2, False),
+        ("L", 0, 1, 2, False),
+        ("R", -1, -2, -1, True),
+        ("R", -1, -2, 0, False),
+    )
+    for index, (side, gt_upper, wall_lower, wall_upper, expected) in enumerate(controls, 1):
+        got = _mono_truth(side, gt_upper, wall_lower, wall_upper)
+        ok = got is expected
+        print("C1B_EXTERIOR_MONO_CONTROL", index, "PASS" if ok else "FAIL")
+        if not ok:
+            raise SystemExit("EXTERIOR_MONO_CONTROL_FAIL")
+    invalid = (
+        EBox("L", T_LO, Fraction(9, 16), L_LO, L_LO + DLAM),
+        EBox("R", Fraction(9, 16), T_MID_HI, L_LO, L_LO + DLAM),
+    )
+    invalid_ok = True
+    for box in invalid:
+        try:
+            _validate_mono_box_side(box, Fraction(17, 32), Fraction(19, 32))
+            invalid_ok = False
+        except RuntimeError as exc:
+            invalid_ok = invalid_ok and str(exc) == "MONO_BOX_SIDE_INVALID"
+    print("C1B_EXTERIOR_MONO_CONTROL", 6, "PASS" if invalid_ok else "FAIL")
+    if not invalid_ok:
+        raise SystemExit("EXTERIOR_MONO_CONTROL_FAIL")
+    mono_work, skipped_cap, guards = MONO_WORK_CAP, 0, []
+    if not _mono_cap_allows(mono_work, E_STAGES[-1][1]):
+        skipped_cap += 1
+    else:
+        guards.append(("E2", "L_MONO", T_LO, T_LO, L_LO, L_LO, False))
+    cap_ok = skipped_cap == 1 and not guards
+    print("C1B_EXTERIOR_MONO_CONTROL", 7, "PASS" if cap_ok else "FAIL")
+    if not cap_ok:
+        raise SystemExit("EXTERIOR_MONO_CONTROL_FAIL")
 
 def tube_stage(slab, tc, stage):
     label, nt, nl, panels = stage
@@ -408,32 +448,101 @@ def e_children(b):
     return [EBox(b.side, a, c, d, e) for a,c in ((b.tl,tm),(tm,b.tr))
             for d,e in ((b.ll,lm),(lm,b.lr))]
 
-def eval_exterior(boxes, panels, label):
+def _mono_truth(side, gt_upper, wall_lower, wall_upper):
+    if side == "L":
+        return gt_upper < 0 and wall_lower > 0
+    if side == "R":
+        return gt_upper < 0 and wall_upper < 0
+    raise RuntimeError("MONO_BOX_SIDE_INVALID")
+
+def _mono_cap_allows(mono_work, panels):
+    return mono_work + 2 * panels <= MONO_WORK_CAP
+
+def _validate_mono_box_side(box, tm, tp):
+    if box.side == "L":
+        if box.tr > tm:
+            raise RuntimeError("MONO_BOX_SIDE_INVALID")
+    elif box.side == "R":
+        if box.tl < tp:
+            raise RuntimeError("MONO_BOX_SIDE_INVALID")
+    else:
+        raise RuntimeError("MONO_BOX_SIDE_INVALID")
+
+def mono_closure_box(box, tm, tp, panels):
+    _validate_mono_box_side(box, tm, tp)
+    if box.side == "L":
+        gt, _, _ = gt_box(box.tl, tm, box.ll, box.lr, panels)
+        wall, _ = g_box(tm, tm, box.ll, box.lr, panels)
+    else:
+        gt, _, _ = gt_box(tp, box.tr, box.ll, box.lr, panels)
+        wall, _ = g_box(tp, tp, box.ll, box.lr, panels)
+    closed = _mono_truth(box.side, gt.upper(), wall.lower(), wall.upper())
+    return closed, gt, wall
+
+def eval_exterior(boxes, panels, label, tm, tp, mono_work):
     unresolved, resolved, work, worstL, worstR = [], [], 0, None, None
-    guards = []
+    sign_guards, mono_guards = [], []
     for box in boxes:
         try:
             value, c = g_box(box.tl, box.tr, box.ll, box.lr, panels); work += c
             good = value.lower() > 0 if box.side == "L" else value.upper() < 0
         except (ValueError, ZeroDivisionError):
             value, good = None, False
-        guards.append((label, box.side, box.tl, box.tr, box.ll, box.lr, bool(good)))
+        sign_guards.append((label, box.side, box.tl, box.tr, box.ll, box.lr, bool(good)))
         (resolved if good else unresolved).append(box)
         if value is not None and box.side == "L" and (worstL is None or value.lower() < worstL):
             worstL = value.lower()
         if value is not None and box.side == "R" and (worstR is None or value.upper() > worstR):
             worstR = value.upper()
-    return unresolved, resolved, work, worstL, worstR, guards
+
+    mono_attempted = mono_closed = mono_skipped = stage_mono_work = 0
+    worst_gt = None
+    worst_wall = None
+    still_unresolved = []
+    ordered = sorted(unresolved, key=lambda b: ((tm - b.tr) if b.side == "L" else (b.tl - tp), b.ll, b.tl))
+    for box in ordered:
+        if not _mono_cap_allows(mono_work, panels):
+            mono_skipped += 1
+            still_unresolved.append(box)
+            continue
+        mono_attempted += 1
+        mono_work += 2 * panels
+        stage_mono_work += 2 * panels
+        work += 2 * panels
+        try:
+            closed, gt, wall = mono_closure_box(box, tm, tp, panels)
+        except (ValueError, ZeroDivisionError):
+            closed, gt, wall = False, None, None
+        mono_guards.append((label, box.side + "_MONO", box.tl, box.tr, box.ll, box.lr, bool(closed)))
+        if gt is not None and (worst_gt is None or gt.upper() > worst_gt):
+            worst_gt = gt.upper()
+        if wall is not None:
+            wall_bound = wall.lower() if box.side == "L" else wall.upper()
+            wall_margin = wall_bound if box.side == "L" else -wall_bound
+            if worst_wall is None or wall_margin < worst_wall[0]:
+                worst_wall = (wall_margin, wall_bound)
+        if closed:
+            mono_closed += 1
+            resolved.append(box)
+        else:
+            still_unresolved.append(box)
+    mono_stats = {
+        "attempted": mono_attempted, "closed": mono_closed, "skipped_cap": mono_skipped,
+        "work": stage_mono_work, "worst_gt_upper": worst_gt,
+        "worst_wall": None if worst_wall is None else worst_wall[1],
+    }
+    return still_unresolved, resolved, work, worstL, worstR, sign_guards + mono_guards, mono_work, mono_stats
 
 def exterior_cover(slab, tm, tp):
     current = exterior_seed(slab, tm, tp)
-    terminal, work = 0, 0
+    terminal, work, mono_work = 0, 0, 0
     all_guards = []
     if not current:
         print("C1B_EXTERIOR", slab.coarse, slab.depth, "EMPTY_REMAINDER", "PASS")
         return True, work, all_guards
     for idx, (label, panels) in enumerate(E_STAGES):
-        unresolved, resolved, w, worstL, worstR, guards = eval_exterior(current, panels, label)
+        unresolved, resolved, w, worstL, worstR, guards, mono_work, mono = eval_exterior(
+            current, panels, label, tm, tp, mono_work)
         all_guards.extend(guards)
         work += w; terminal += len(resolved)
         live_terminal = terminal + len(unresolved)
@@ -442,6 +551,11 @@ def exterior_cover(slab, tm, tp):
               "live_terminal", live_terminal,
               "worst_left_lower", None if worstL is None else worstL.str(50),
               "worst_right_upper", None if worstR is None else worstR.str(50))
+        print("C1B_EXTERIOR_MONO", slab.coarse, slab.depth, label,
+              "attempted", mono["attempted"], "closed", mono["closed"],
+              "skipped_cap", mono["skipped_cap"], "work", mono["work"],
+              "worst_gt_upper", None if mono["worst_gt_upper"] is None else mono["worst_gt_upper"].str(50),
+              "worst_wall", None if mono["worst_wall"] is None else mono["worst_wall"].str(50))
         if live_terminal > E_BOX_CAP:
             return False, work, all_guards
         if not unresolved:
@@ -522,10 +636,13 @@ def preflight():
     print("CORNER_RULE", "tr==1 and first s-panel => checker corner_hull")
     print("T_STAGES", T_STAGES, "ROOT_MV", (ROOT_MV_STEPS,ROOT_G_PANELS,ROOT_GT_PANELS,ROOT_GL_PANELS), "ROOT_GT_T_CELLS", ROOT_GT_T_CELLS)
     print("E_POLICY", E0_TBOXES, E0_LBOXES, E_STAGES, "cap", E_BOX_CAP)
+    print("MONO_RULE left: Gt<0 on [a,t-]xL and G(t-)>0 => G>0 ; right: Gt<0 on [t+,b]xL and G(t+)<0 => G<0")
+    print("MONO_WORK_CAP", MONO_WORK_CAP)
     print("CAPS", "coarse", N_COARSE, "accepted", MAX_ACCEPTED, "attempted", MAX_ATTEMPTED,
           "max_depth", MAX_DEPTH)
     print("WORK_CEILINGS", ATTEMPT_WORK_CEILING, ACCEPTED_WORK_CEILING, GLOBAL_ATTEMPT_WORK_CEILING)
     if not ok: raise SystemExit("PREFLIGHT_FAIL")
     predictor_selection_controls()
+    mono_closure_controls()
     bob_preflight()
 
