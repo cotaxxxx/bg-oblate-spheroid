@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import contextlib
 import io
+import hashlib
+import json
 import re
 import signal
 import sys
@@ -141,68 +143,79 @@ def slab_payload(slab):
     }
 
 
+def _rr(pair):
+    return None if pair is None else [persistence.rational_text(pair[0]), persistence.rational_text(pair[1])]
+
+def _serialize_guard(guard):
+    label, kind, tl, tr, ll, lr, truth = guard
+    return {
+        "stage": label, "kind": kind,
+        "t_lo": persistence.rational_text(tl), "t_hi": persistence.rational_text(tr),
+        "lambda_lo": persistence.rational_text(ll), "lambda_hi": persistence.rational_text(lr),
+        "truth": bool(truth),
+    }
+
 def serialize_mv_step(step):
-    def rr(pair):
-        return None if pair is None else [persistence.rational_text(pair[0]), persistence.rational_text(pair[1])]
     return {
         "step": int(step["step"]),
-        "T_k": rr(step["T_k"]),
+        "T_k": _rr(step["T_k"]),
         "t_ref": persistence.rational_text(step["t_ref"]),
         "lambda_c": persistence.rational_text(step["lambda_c"]),
         "G0": step["G0"],
         "Gt": step["Gt"],
+        "Gt_cells": [{
+            "t_cell": _rr(cell["t_cell"]),
+            "Gt": cell["Gt"],
+            "guard": bool(cell["guard"]),
+            "corner_hull": int(cell["corner_hull"]),
+            "work": int(cell["work"]),
+        } for cell in step.get("Gt_cells", [])],
         "Gl": step["Gl"],
         "Gpar": step["Gpar"],
         "N_k": step["N_k"],
-        "T_next": rr(step["T_next"]),
+        "T_next": _rr(step["T_next"]),
         "width": persistence.rational_text(step["width"]),
         "division_guard": bool(step["division_guard"]),
+        "empty_intersection": bool(step.get("empty_intersection", False)),
         "gt_charts": {str(k): int(v) for k, v in step["gt_charts"].items()},
         "gl_stats": {str(k): int(v) for k, v in step["gl_stats"].items()},
         "step_work": int(step["step_work"]),
     }
 
-
 def serialize_record(rec, tc, mode, work, reason, trace):
+    empty = {
+        "predictor_mode": mode,
+        "t_c": None if tc is None else persistence.rational_text(tc),
+        "T_star": None, "left_clamp": None, "right_clamp": None,
+        "t_minus": None, "t_plus": None, "T_0": None,
+        "root_gt_t_cells": 16, "corner_hull": None, "corner_boxes": [],
+        "tube_stage": None, "tube_guards": [], "exterior_guards": [],
+        "sup_error": None, "middle_partition": None,
+        "work": {k: int(v) for k, v in work.items()},
+        "work_total": int(sum(work.values())), "reason": reason, "trace": trace,
+        "root_mv_steps": [], "root_reason": None,
+    }
     if rec is None:
-        return {
-            "predictor_mode": mode,
-            "t_c": None if tc is None else persistence.rational_text(tc),
-            "T_star": None,
-            "left_clamp": None,
-            "right_clamp": None,
-            "corner_hull": None,
-            "tube_stage": None,
-            "sup_error": None,
-            "middle_partition": None,
-            "work": {k: int(v) for k, v in work.items()},
-            "work_total": int(sum(work.values())),
-            "reason": reason,
-            "trace": trace,
-            "root_mv_steps": [],
-            "root_reason": None,
-        }
-    return {
+        return empty
+    empty.update({
         "predictor_mode": rec["mode"],
         "t_c": persistence.rational_text(rec["tc"]),
         "T_star": serialize_root(rec["root"]),
-        "left_clamp": bool(rec["left_clamp"]),
-        "right_clamp": bool(rec["right_clamp"]),
-        "corner_hull": int(rec["corner_hull"]),
+        "left_clamp": bool(rec["left_clamp"]), "right_clamp": bool(rec["right_clamp"]),
+        "t_minus": persistence.rational_text(rec["tm"]),
+        "t_plus": persistence.rational_text(rec["tp"]),
+        "T_0": [persistence.rational_text(rec["tm"]), persistence.rational_text(rec["tp"])],
+        "root_gt_t_cells": 16, "corner_hull": int(rec["corner_hull"]),
+        "corner_boxes": [[persistence.rational_text(v) for v in box] for box in rec.get("corner_boxes", ())],
         "tube_stage": rec["tube_stage"],
+        "tube_guards": [_serialize_guard(x) for x in rec.get("tube_guards", ())],
+        "exterior_guards": [_serialize_guard(x) for x in rec.get("exterior_guards", ())],
         "sup_error": None if rec["sup_error"] is None else persistence.rational_text(rec["sup_error"]),
         "root_mv_steps": [serialize_mv_step(x) for x in rec.get("root_steps", [])],
         "root_reason": rec.get("root_reason"),
-        "middle_partition": [
-            [kind, persistence.rational_text(lo), persistence.rational_text(hi)]
-            for kind, lo, hi in rec["pieces"]
-        ],
-        "work": {k: int(v) for k, v in work.items()},
-        "work_total": int(sum(work.values())),
-        "reason": reason,
-        "trace": trace,
-    }
-
+        "middle_partition": [[kind, persistence.rational_text(lo), persistence.rational_text(hi)] for kind, lo, hi in rec["pieces"]],
+    })
+    return empty
 
 def replay(kernel, records):
     queue, ok = kernel.coarse_ledger()
@@ -233,10 +246,58 @@ def replay(kernel, records):
     }
 
 
+REPLAY_SCHEMA = "C1B_A1_REPLAY_V2_3_1"
+REPLAY_KEYS = (
+    "schema", "attempt_sequence", "coarse_index", "refinement_depth",
+    "lambda_lo", "lambda_hi", "tree_node", "t_c", "left_clamp",
+    "right_clamp", "t_minus", "t_plus", "T_0", "root_gt_t_cells",
+    "corner_boxes", "tube_stage", "tube_guards", "exterior_guards",
+    "producer_accept_root_outcome", "decision",
+)
+
+def replay_plan_item(payload):
+    result = payload["result"]
+    decision = payload["decision"]
+    item = {
+        "schema": REPLAY_SCHEMA,
+        "attempt_sequence": int(payload["attempt_sequence"]),
+        "coarse_index": int(payload["coarse_index"]),
+        "refinement_depth": int(payload["refinement_depth"]),
+        "lambda_lo": payload["lambda_lo"], "lambda_hi": payload["lambda_hi"],
+        "tree_node": f'{payload["coarse_index"]}:{payload["refinement_depth"]}:{payload["lambda_lo"]}:{payload["lambda_hi"]}',
+        "t_c": result.get("t_c"),
+        "left_clamp": result.get("left_clamp"), "right_clamp": result.get("right_clamp"),
+        "t_minus": result.get("t_minus"), "t_plus": result.get("t_plus"),
+        "T_0": result.get("T_0"), "root_gt_t_cells": int(result.get("root_gt_t_cells", 16)),
+        "corner_boxes": result.get("corner_boxes", []),
+        "tube_stage": result.get("tube_stage"),
+        "tube_guards": result.get("tube_guards", []),
+        "exterior_guards": result.get("exterior_guards", []),
+        "producer_accept_root_outcome": (
+            "RESOLVED_WITH_CERTIFIED_T_STAR" if decision == "ACCEPT" and result.get("T_star") is not None else None
+        ),
+        "decision": decision,
+    }
+    if tuple(item.keys()) != REPLAY_KEYS:
+        raise SystemExit("REPLAY_PLAN_KEY_ORDER_FAIL")
+    forbidden = {"T_star", "G0", "Gt", "Gl", "Gpar", "N_k", "root_mv_steps"}
+    if forbidden.intersection(item):
+        raise SystemExit("REPLAY_PLAN_A2_FIELD_LEAK")
+    return item
+
+def write_replay_plan(ledger, run_dir):
+    records = [r["payload"] for r in ledger.records if r["record_type"] == "slab_record"]
+    data = b"".join(persistence.canonical_bytes(replay_plan_item(x)) + b"\n" for x in records)
+    path = Path(run_dir) / "checker_replay_exact.jsonl"
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_bytes(data)
+    tmp.replace(path)
+    return path, hashlib.sha256(data).hexdigest()
+
 def estimates(kernel):
     predictor = 513 * 2 * kernel.PRED_SCAN_PANELS
     t0 = 8 * 4 * 4096 + 2 * 4 * 4096
-    root = kernel.ROOT_MV_STEPS * (kernel.ROOT_G_PANELS + kernel.ROOT_GT_PANELS + kernel.ROOT_GL_PANELS)
+    root = kernel.ROOT_MV_STEPS * (kernel.ROOT_G_PANELS + kernel.ROOT_GT_T_CELLS * kernel.ROOT_GT_PANELS + kernel.ROOT_GL_PANELS)
     e0 = kernel.E0_TBOXES * kernel.E0_LBOXES * kernel.E_STAGES[0][1]
     early = kernel.N_COARSE * (predictor + t0 + root + e0)
     no_refine_late = kernel.N_COARSE * (
@@ -267,7 +328,8 @@ def header_payload(kernel, lineage, pins, identity):
             "ROOT_MV": {
                 "steps": kernel.ROOT_MV_STEPS,
                 "g_panels": kernel.ROOT_G_PANELS,
-                "gt_panels": kernel.ROOT_GT_PANELS,
+                "gt_panels_per_cell": kernel.ROOT_GT_PANELS,
+                "gt_t_cells": kernel.ROOT_GT_T_CELLS,
                 "gl_panels": kernel.ROOT_GL_PANELS,
                 "target": persistence.rational_text(kernel.ROOT_TARGET),
             },
@@ -287,6 +349,8 @@ def header_payload(kernel, lineage, pins, identity):
         },
         "estimates": estimates(kernel),
         "pin_manifest": pins,
+        "phase": "producer_tree_generation",
+        "replay_schema": REPLAY_SCHEMA,
     }
 
 
@@ -373,6 +437,7 @@ def run_full(kernel, lineage, run_dir):
     global_work = state["global_work"]
     attempted = state["attempted"]
     accepted_count = len(state["accepted"])
+    replay_path, replay_sha256 = write_replay_plan(ledger, run_dir)
     while queue:
         if _stop_requested:
             append_segment_end(
@@ -431,6 +496,7 @@ def run_full(kernel, lineage, run_dir):
             "utc": persistence.utc_now(),
         }
         ledger.append("slab_record", payload)
+        replay_path, replay_sha256 = write_replay_plan(ledger, run_dir)
         if decision == "ACCEPT":
             pass
         elif decision == "REFINE":
@@ -458,10 +524,13 @@ def run_full(kernel, lineage, run_dir):
         accepted=accepted_count,
         exact_union=union_ok,
         final_record_hash_before_end=ledger.last_hash,
+        checker_replay_path=str(replay_path),
+        checker_replay_sha256=replay_sha256,
     )
     print("C1B_RESUMABLE_FINAL", "PASS" if union_ok else "UNRESOLVED",
           "accepted", accepted_count, "attempted", attempted,
-          "work", global_work, "ledger_hash", ledger.last_hash)
+          "work", global_work, "ledger_hash", ledger.last_hash,
+          "replay_sha256", replay_sha256)
     if not union_ok:
         raise SystemExit("C1B_EXACT_UNION_FAIL")
 

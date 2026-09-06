@@ -31,6 +31,7 @@ W0, PRED_ACCEPT, ROOT_TARGET = Fraction(1, 16), Fraction(1, 64), Fraction(1, 128
 T_STAGES = (("T0", 8, 4, 4096), ("T1", 16, 8, 4096), ("T2", 32, 16, 8192))
 ROOT_MV_STEPS = 8
 ROOT_G_PANELS, ROOT_GT_PANELS, ROOT_GL_PANELS = 32768, 8192, 8192
+ROOT_GT_T_CELLS = 16
 E0_TBOXES, E0_LBOXES = 24, 8
 E_STAGES = (("E0", 1024), ("E1", 2048), ("E2", 4096))
 E_BOX_CAP = 4096
@@ -188,19 +189,44 @@ def predictor_scan(slab):
         prev_t, prev_mid = t, v.mid()
     return None, work
 
+def select_predictor_candidate(continuation, bracket):
+    if not isinstance(continuation, Fraction):
+        raise TypeError("PREDICTOR_CONTINUATION_NOT_FRACTION")
+    if bracket is None:
+        return None, None
+    s_lo, s_hi = bracket
+    if not isinstance(s_lo, Fraction) or not isinstance(s_hi, Fraction):
+        raise TypeError("PREDICTOR_SCAN_BRACKET_NOT_FRACTION")
+    scan_mid = (s_lo + s_hi) / 2
+    if abs(continuation - scan_mid) <= ROOT_TARGET:
+        return continuation, "continuation"
+    return scan_mid, "relocated"
+
 def choose_predictor(slab, previous_root):
     tcont = Fraction(9, 16) if previous_root is None else (previous_root[0] + previous_root[1]) / 2
     bracket, work = predictor_scan(slab)
+    tc, mode = select_predictor_candidate(tcont, bracket)
     if bracket is None:
         print("C1B_PREDICTOR", slab.coarse, slab.depth, slab.ll, slab.lr,
               "P0", tcont, "P1 NONE", "P2 UNRESOLVED", "scan_cells", work)
         return None, None, work
-    tscan = (bracket[0] + bracket[1]) / 2
-    tc = tcont if abs(tcont-tscan) <= PRED_ACCEPT else tscan
-    mode = "continuation" if tc == tcont else "relocated"
     print("C1B_PREDICTOR", slab.coarse, slab.depth, slab.ll, slab.lr,
           "P0", tcont, "P1", bracket, "P2", tc, "mode", mode, "scan_cells", work)
     return tc, mode, work
+
+def predictor_selection_controls():
+    controls = (
+        (Fraction(9,16), (Fraction(583,1024), Fraction(585,1024)), Fraction(9,16), "continuation"),
+        (Fraction(9,16), (Fraction(584,1024), Fraction(586,1024)), Fraction(585,1024), "relocated"),
+    )
+    for index, (continuation, bracket, expected_tc, expected_mode) in enumerate(controls, 1):
+        tc, mode = select_predictor_candidate(continuation, bracket)
+        ok = tc == expected_tc and mode == expected_mode
+        print("C1B_PREDICTOR_SELECTION_CONTROL", index, "PASS" if ok else "FAIL",
+              "continuation", continuation, "bracket", bracket,
+              "selected", tc, mode, "expected", expected_tc, expected_mode)
+        if not ok:
+            raise SystemExit("PREDICTOR_SELECTION_CONTROL_FAIL")
 
 def tube_stage(slab, tc, stage):
     label, nt, nl, panels = stage
@@ -208,13 +234,17 @@ def tube_stage(slab, tc, stage):
     lclamp, rclamp = tm == T_LO, tp == T_HI
     gt_bad = left_bad = right_bad = corner = cells = 0
     gt_worst = left_worst = right_worst = None
+    guards, corner_boxes = [], []
     for tl, tr in split(tm, tp, nt):
         for ll, lr in split(slab.ll, slab.lr, nl):
             try:
                 v, charts, c = gt_box(tl, tr, ll, lr, panels)
-                cells += c; corner += charts.get("corner_hull", 0); good = v.upper() < 0
+                cells += c; ch = int(charts.get("corner_hull", 0)); corner += ch; good = v.upper() < 0
+                if ch:
+                    corner_boxes.append((tl, tr, ll, lr))
             except (ValueError, ZeroDivisionError):
                 v, good = None, False
+            guards.append((label, "GT", tl, tr, ll, lr, bool(good)))
             gt_bad += 0 if good else 1
             if v is not None and (gt_worst is None or v.upper() > gt_worst[0]):
                 gt_worst = (v.upper(), tl, tr, ll, lr)
@@ -223,6 +253,7 @@ def tube_stage(slab, tc, stage):
             v, c = g_box(tm, tm, ll, lr, panels); cells += c; good = v.lower() > 0
         except (ValueError, ZeroDivisionError):
             v, good = None, False
+        guards.append((label, "LEFT", tm, tm, ll, lr, bool(good)))
         left_bad += 0 if good else 1
         if v is not None and (left_worst is None or v.lower() < left_worst[0]):
             left_worst = (v.lower(), ll, lr)
@@ -231,6 +262,7 @@ def tube_stage(slab, tc, stage):
                 v, c = g_box(tp, tp, ll, lr, panels); cells += c; good = v.upper() < 0
             except (ValueError, ZeroDivisionError):
                 v, good = None, False
+            guards.append((label, "RIGHT", tp, tp, ll, lr, bool(good)))
             right_bad += 0 if good else 1
             if v is not None and (right_worst is None or v.upper() > right_worst[0]):
                 right_worst = (v.upper(), ll, lr)
@@ -243,18 +275,27 @@ def tube_stage(slab, tc, stage):
           "gt_worst_upper", None if gt_worst is None else gt_worst[0].str(50),
           "left_worst_lower", None if left_worst is None else left_worst[0].str(50),
           "right_worst_upper", None if right_worst is None else right_worst[0].str(50))
-    return ok, tm, tp, lclamp, rclamp, corner, cells, label
+    return ok, tm, tp, lclamp, rclamp, corner, cells, label, guards, corner_boxes
 
 def tube_first_pass(slab, tc):
     total = corner = 0
+    all_guards, all_corner_boxes = [], []
     last = None
     for stage in T_STAGES:
         out = tube_stage(slab, tc, stage)
         last = out; total += out[6]; corner += out[5]
+        all_guards.extend(out[8]); all_corner_boxes.extend(out[9])
         if out[0]:
             print("C1B_TUBE_FIRST_PASS", slab.coarse, slab.depth, stage[0])
-            return True, out[1], out[2], out[3], out[4], corner, total, stage[0]
-    return False, last[1], last[2], last[3], last[4], corner, total, None
+            return True, out[1], out[2], out[3], out[4], corner, total, stage[0], all_guards, all_corner_boxes
+    return False, last[1], last[2], last[3], last[4], corner, total, None, all_guards, all_corner_boxes
+
+def _outward_hull(values):
+    if not values:
+        raise RuntimeError("ROOT_EMPTY_GT_CELL_SET")
+    lo = min(v.lower() for v in values)
+    hi = max(v.upper() for v in values)
+    return base._box(lo, hi)
 
 def root_localize(slab, tm, tp):
     lo, hi, work = tm, tp, 0
@@ -269,43 +310,65 @@ def root_localize(slab, tm, tp):
             break
         t_ref = (lo + hi) / 2
         T_k = (lo, hi)
+        G0 = Gl = Gpar = candidate = None
+        gt_cells = []
+        gt_values = []
+        gt_charts = defaultdict(int)
+        gl_stats = {}
+        empty_intersection = False
         try:
             work += ROOT_G_PANELS
             G0, _ = g_box(t_ref, t_ref, lambda_c, lambda_c, ROOT_G_PANELS)
-            work += ROOT_GT_PANELS
-            Gt, gt_charts, _ = gt_box(lo, hi, slab.ll, slab.lr, ROOT_GT_PANELS)
+            for cell_lo, cell_hi in split(lo, hi, ROOT_GT_T_CELLS):
+                work += ROOT_GT_PANELS
+                value, charts, _ = gt_box(cell_lo, cell_hi, slab.ll, slab.lr, ROOT_GT_PANELS)
+                for key, count in charts.items():
+                    gt_charts[key] += count
+                gt_values.append(value)
+                gt_cells.append({
+                    "t_cell": (cell_lo, cell_hi),
+                    "Gt": _arb_snapshot(value),
+                    "guard": bool(value.upper() < 0),
+                    "corner_hull": int(charts.get("corner_hull", 0)),
+                    "work": ROOT_GT_PANELS,
+                })
+            Gt = _outward_hull(gt_values)
             work += ROOT_GL_PANELS
             Gl, gl_stats, _ = glam_box(lo, hi, slab.ll, slab.lr, ROOT_GL_PANELS)
         except (ValueError, ZeroDivisionError):
             reason = "MV_EVAL_UNRESOLVED"
             break
         Gpar = G0 + Gl * dlambda
-        candidate = _newton_candidate(t_ref, Gpar, Gt)
+        all_guards = all(cell["guard"] for cell in gt_cells)
+        candidate = _newton_candidate(t_ref, Gpar, Gt) if all_guards else None
         guard = candidate is not None
+        base_rec = {
+            "step": step, "T_k": T_k, "t_ref": t_ref, "lambda_c": lambda_c,
+            "G0": _arb_snapshot(G0), "Gt": _arb_snapshot(Gt), "Gt_cells": gt_cells,
+            "Gl": _arb_snapshot(Gl), "Gpar": _arb_snapshot(Gpar),
+            "division_guard": guard, "gt_charts": dict(gt_charts), "gl_stats": gl_stats,
+            "empty_intersection": False,
+            "step_work": ROOT_G_PANELS + ROOT_GT_T_CELLS*ROOT_GT_PANELS + ROOT_GL_PANELS,
+        }
         if not guard:
-            steps.append({
-                "step": step, "T_k": T_k, "t_ref": t_ref, "lambda_c": lambda_c,
-                "G0": _arb_snapshot(G0), "Gt": _arb_snapshot(Gt),
-                "Gl": _arb_snapshot(Gl), "Gpar": _arb_snapshot(Gpar),
-                "N_k": None, "T_next": None, "width": hi-lo,
-                "division_guard": False, "gt_charts": gt_charts, "gl_stats": gl_stats,
-                "step_work": ROOT_G_PANELS + ROOT_GT_PANELS + ROOT_GL_PANELS,
-            })
+            base_rec.update({"N_k": None, "T_next": None, "width": hi-lo})
+            steps.append(base_rec)
             reason = "GT_DIVISION_GUARD_UNRESOLVED"
             print("C1B_ROOT_MV_STEP", slab.coarse, slab.depth, step,
                   "guard", False, "T_k", T_k, "t_ref", t_ref, "lambda_c", lambda_c)
             break
-        new_lo, new_hi = _intersect_newton(lo, hi, candidate)
-        step_rec = {
-            "step": step, "T_k": T_k, "t_ref": t_ref, "lambda_c": lambda_c,
-            "G0": _arb_snapshot(G0), "Gt": _arb_snapshot(Gt),
-            "Gl": _arb_snapshot(Gl), "Gpar": _arb_snapshot(Gpar),
-            "N_k": _arb_snapshot(candidate), "T_next": (new_lo, new_hi),
-            "width": new_hi-new_lo, "division_guard": True,
-            "gt_charts": gt_charts, "gl_stats": gl_stats,
-            "step_work": ROOT_G_PANELS + ROOT_GT_PANELS + ROOT_GL_PANELS,
-        }
-        steps.append(step_rec)
+        try:
+            new_lo, new_hi = _intersect_newton(lo, hi, candidate)
+        except RuntimeError as exc:
+            if str(exc) != "ROOT_EMPTY_INTERSECTION":
+                raise
+            base_rec.update({"N_k": _arb_snapshot(candidate), "T_next": None,
+                             "width": hi-lo, "empty_intersection": True})
+            steps.append(base_rec)
+            raise
+        base_rec.update({"N_k": _arb_snapshot(candidate), "T_next": (new_lo, new_hi),
+                         "width": new_hi-new_lo})
+        steps.append(base_rec)
         print("C1B_ROOT_MV_STEP", slab.coarse, slab.depth, step,
               "guard", True, "T_k", T_k, "t_ref", t_ref, "lambda_c", lambda_c,
               "T_next", (new_lo, new_hi), "width", new_hi-new_lo,
@@ -359,29 +422,33 @@ def e_children(b):
     return [EBox(b.side, a, c, d, e) for a,c in ((b.tl,tm),(tm,b.tr))
             for d,e in ((b.ll,lm),(lm,b.lr))]
 
-def eval_exterior(boxes, panels):
+def eval_exterior(boxes, panels, label):
     unresolved, resolved, work, worstL, worstR = [], [], 0, None, None
-    for b in boxes:
+    guards = []
+    for box in boxes:
         try:
-            v, c = g_box(b.tl, b.tr, b.ll, b.lr, panels); work += c
-            good = v.lower() > 0 if b.side == "L" else v.upper() < 0
+            value, c = g_box(box.tl, box.tr, box.ll, box.lr, panels); work += c
+            good = value.lower() > 0 if box.side == "L" else value.upper() < 0
         except (ValueError, ZeroDivisionError):
-            v, good = None, False
-        (resolved if good else unresolved).append(b)
-        if v is not None and b.side == "L" and (worstL is None or v.lower() < worstL):
-            worstL = v.lower()
-        if v is not None and b.side == "R" and (worstR is None or v.upper() > worstR):
-            worstR = v.upper()
-    return unresolved, resolved, work, worstL, worstR
+            value, good = None, False
+        guards.append((label, box.side, box.tl, box.tr, box.ll, box.lr, bool(good)))
+        (resolved if good else unresolved).append(box)
+        if value is not None and box.side == "L" and (worstL is None or value.lower() < worstL):
+            worstL = value.lower()
+        if value is not None and box.side == "R" and (worstR is None or value.upper() > worstR):
+            worstR = value.upper()
+    return unresolved, resolved, work, worstL, worstR, guards
 
 def exterior_cover(slab, tm, tp):
     current = exterior_seed(slab, tm, tp)
     terminal, work = 0, 0
+    all_guards = []
     if not current:
         print("C1B_EXTERIOR", slab.coarse, slab.depth, "EMPTY_REMAINDER", "PASS")
-        return True, work
+        return True, work, all_guards
     for idx, (label, panels) in enumerate(E_STAGES):
-        unresolved, resolved, w, worstL, worstR = eval_exterior(current, panels)
+        unresolved, resolved, w, worstL, worstR, guards = eval_exterior(current, panels, label)
+        all_guards.extend(guards)
         work += w; terminal += len(resolved)
         live_terminal = terminal + len(unresolved)
         print("C1B_EXTERIOR_STAGE", slab.coarse, slab.depth, label,
@@ -390,16 +457,16 @@ def exterior_cover(slab, tm, tp):
               "worst_left_lower", None if worstL is None else worstL.str(50),
               "worst_right_upper", None if worstR is None else worstR.str(50))
         if live_terminal > E_BOX_CAP:
-            return False, work
+            return False, work, all_guards
         if not unresolved:
             print("C1B_EXTERIOR_FIRST_PASS", slab.coarse, slab.depth, label)
-            return True, work
+            return True, work, all_guards
         if idx == len(E_STAGES)-1:
-            return False, work
-        current = [c for b in unresolved for c in e_children(b)]
+            return False, work, all_guards
+        current = [c for box in unresolved for c in e_children(box)]
         if terminal + len(current) > E_BOX_CAP:
-            return False, work
-    return False, work
+            return False, work, all_guards
+    return False, work, all_guards
 
 def exact_middle_partition(tm, tp):
     pieces = []
@@ -411,31 +478,40 @@ def exact_middle_partition(tm, tp):
          and all(x[2] == y[1] for x,y in zip(nonempty, nonempty[1:]))
     return ok, nonempty
 
-def attempt(slab, previous_root):
-    work = {"predictor":0, "tube":0, "root":0, "exterior":0}
-    tc, mode, w = choose_predictor(slab, previous_root); work["predictor"] += w
-    if tc is None: return False, None, None, None, work, "PREDICTOR"
-    tok, tm, tp, lc, rc, corner, w, tstage = tube_first_pass(slab, tc); work["tube"] += w
-    if not tok: return False, None, None, None, work, "TUBE"
+def _attempt_with_tc(slab, tc, mode, predictor_work):
+    work = {"predictor":predictor_work, "tube":0, "root":0, "exterior":0}
+    if tc is None:
+        return False, None, None, None, work, "PREDICTOR"
+    tok, tm, tp, lc, rc, corner, w, tstage, tube_guards, corner_boxes = tube_first_pass(slab, tc); work["tube"] += w
+    base_rec = {"slab":slab, "tc":tc, "mode":mode, "root":None, "sup_error":None,
+                "tm":tm, "tp":tp, "left_clamp":lc, "right_clamp":rc,
+                "corner_hull":corner, "corner_boxes":corner_boxes, "tube_stage":tstage,
+                "tube_guards":tube_guards, "exterior_guards":[], "pieces":[],
+                "root_steps":[], "root_reason":None}
+    if not tok:
+        return False, base_rec, None, tc, work, "TUBE"
     rok, root, w, root_steps, root_reason = root_localize(slab, tm, tp); work["root"] += w
+    base_rec.update({"root":root, "root_steps":root_steps, "root_reason":root_reason})
     if not rok:
-        rec = {"slab":slab, "tc":tc, "mode":mode, "root":root, "sup_error":None,
-               "tm":tm, "tp":tp, "left_clamp":lc, "right_clamp":rc,
-               "corner_hull":corner, "tube_stage":tstage, "pieces":[],
-               "root_steps":root_steps, "root_reason":root_reason}
-        return False, rec, root, tc, work, "ROOT:" + root_reason
+        return False, base_rec, root, tc, work, "ROOT:" + root_reason
     aok, err = predictor_accept(tc, root)
-    if not aok: return False, None, None, None, work, "PREDICTOR_ACCEPT"
-    eok, w = exterior_cover(slab, tm, tp); work["exterior"] += w
-    if not eok: return False, None, None, None, work, "EXTERIOR"
+    base_rec["sup_error"] = err
+    if not aok:
+        return False, base_rec, root, tc, work, "PREDICTOR_ACCEPT"
+    eok, w, exterior_guards = exterior_cover(slab, tm, tp); work["exterior"] += w
+    base_rec["exterior_guards"] = exterior_guards
+    if not eok:
+        return False, base_rec, root, tc, work, "EXTERIOR"
     pok, pieces = exact_middle_partition(tm, tp)
     print("C1B_MIDDLE_T_PARTITION", "PASS" if pok else "FAIL", slab.coarse, slab.depth, pieces)
-    if not pok: return False, None, None, None, work, "T_PARTITION"
-    rec = {"slab":slab, "tc":tc, "mode":mode, "root":root, "sup_error":err,
-           "tm":tm, "tp":tp, "left_clamp":lc, "right_clamp":rc,
-           "corner_hull":corner, "tube_stage":tstage, "pieces":pieces,
-           "root_steps":root_steps, "root_reason":root_reason}
-    return True, rec, root, tc, work, "PASS"
+    base_rec["pieces"] = pieces
+    if not pok:
+        return False, base_rec, root, tc, work, "T_PARTITION"
+    return True, base_rec, root, tc, work, "PASS"
+
+def attempt(slab, previous_root):
+    tc, mode, predictor_work = choose_predictor(slab, previous_root)
+    return _attempt_with_tc(slab, tc, mode, predictor_work)
 
 def preflight():
     slabs, ok = coarse_ledger()
@@ -448,11 +524,12 @@ def preflight():
     print("PREDICTOR_ACCEPT", PRED_ACCEPT, "ROOT_TARGET", ROOT_TARGET)
     print("CLAMP_RULE", "max(1/2,tc-w0)", "min(1,tc+w0)", "w0", W0)
     print("CORNER_RULE", "tr==1 and first s-panel => corner_hull")
-    print("T_STAGES", T_STAGES, "ROOT_MV", (ROOT_MV_STEPS,ROOT_G_PANELS,ROOT_GT_PANELS,ROOT_GL_PANELS))
+    print("T_STAGES", T_STAGES, "ROOT_MV", (ROOT_MV_STEPS,ROOT_G_PANELS,ROOT_GT_PANELS,ROOT_GL_PANELS), "ROOT_GT_T_CELLS", ROOT_GT_T_CELLS)
     print("E_POLICY", E0_TBOXES, E0_LBOXES, E_STAGES, "cap", E_BOX_CAP)
     print("CAPS", "coarse", N_COARSE, "accepted", MAX_ACCEPTED, "attempted", MAX_ATTEMPTED,
           "max_depth", MAX_DEPTH)
     print("WORK_CEILINGS", ATTEMPT_WORK_CEILING, ACCEPTED_WORK_CEILING, GLOBAL_ATTEMPT_WORK_CEILING)
     if not ok: raise SystemExit("PREFLIGHT_FAIL")
+    predictor_selection_controls()
     bob_preflight()
 
