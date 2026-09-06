@@ -2,6 +2,7 @@
   "checker": {
     "blob_paths": [
       "analysis/c1b_resumable_driver.py",
+      "analysis/c1b_cross_lineage_compare.py",
       "producer/global_axial_c1b_gating.py",
       "checker/global_axial_c1b_gating.py",
       "producer/global_axial_c1b_kernel.py",
@@ -10,12 +11,13 @@
       "checker/global_axial_c1b_checker.py"
     ],
     "expected_blobs": {
+      "analysis/c1b_cross_lineage_compare.py": "71e9f740263c13dcba5db207f7f410e8b6a5cd9d",
       "analysis/c1b_resumable_driver.py": "5fd308bb4c02c6ddbd612ddbedb18f6b9e22bc3d",
       "checker/global_axial_c1b_checker.py": "0760764ef7592be1ddd4ffec3966e9c6ec930a5b",
-      "checker/global_axial_c1b_gating.py": "dbcb1fe497a4a355a75a1ddda27827e3bde73dde",
-      "checker/global_axial_c1b_kernel.py": "970a84ad22e9c14ab4dd4c7fe46042a34beba188",
-      "producer/global_axial_c1b_gating.py": "dbcb1fe497a4a355a75a1ddda27827e3bde73dde",
-      "producer/global_axial_c1b_kernel.py": "4981ddd954716c5433078f249486815eb7dd0cb4",
+      "checker/global_axial_c1b_gating.py": "22df684296a71ec4662601b5cff04db22e9b5ccd",
+      "checker/global_axial_c1b_kernel.py": "a1d0a53ff6b9160d8d1e5e612f9934a3ba00f029",
+      "producer/global_axial_c1b_gating.py": "44bb616549de2399268433fc27271936f1d369cb",
+      "producer/global_axial_c1b_kernel.py": "9c2c484a0fc353e59d3f211fd7a6e1b9e9d2b337",
       "producer/global_axial_c1b_producer.py": "0616fbd7c9c85f77c8e80b61a5b3b536b45012a8"
     },
     "expected_environment": {
@@ -59,6 +61,10 @@
       }
     },
     "ref": "implementation/gt-boundary-two-chart",
+    "requirements_sha256": {
+      "requirements-interval.txt": "cd171f53dd8a187b2ef4bd7ad0cc2adbe2082395646c0c57407f4e3514c11f5c",
+      "requirements-prototype.txt": "2fee6d6bf48308ae7c510558f538b64dcb932d084efb9d4ff39199feff55ba3f"
+    },
     "wheel_dir": "/home/daybreak/basepoint-geometry-artifacts/C1b/20260905T140551Z/wheels",
     "wheel_sha256": {
       "mpmath-1.4.1-py3-none-any.whl": "dc4f0ea2304480d4a9a48a94c1020571558ade522b44a6912efac63a586e140f",
@@ -68,6 +74,7 @@
   "producer": {
     "blob_paths": [
       "analysis/c1b_resumable_driver.py",
+      "analysis/c1b_cross_lineage_compare.py",
       "producer/global_axial_c1b_gating.py",
       "checker/global_axial_c1b_gating.py",
       "producer/global_axial_c1b_kernel.py",
@@ -76,12 +83,13 @@
       "checker/global_axial_c1b_checker.py"
     ],
     "expected_blobs": {
+      "analysis/c1b_cross_lineage_compare.py": "71e9f740263c13dcba5db207f7f410e8b6a5cd9d",
       "analysis/c1b_resumable_driver.py": "5fd308bb4c02c6ddbd612ddbedb18f6b9e22bc3d",
       "checker/global_axial_c1b_checker.py": "0760764ef7592be1ddd4ffec3966e9c6ec930a5b",
-      "checker/global_axial_c1b_gating.py": "dbcb1fe497a4a355a75a1ddda27827e3bde73dde",
-      "checker/global_axial_c1b_kernel.py": "970a84ad22e9c14ab4dd4c7fe46042a34beba188",
-      "producer/global_axial_c1b_gating.py": "dbcb1fe497a4a355a75a1ddda27827e3bde73dde",
-      "producer/global_axial_c1b_kernel.py": "4981ddd954716c5433078f249486815eb7dd0cb4",
+      "checker/global_axial_c1b_gating.py": "22df684296a71ec4662601b5cff04db22e9b5ccd",
+      "checker/global_axial_c1b_kernel.py": "a1d0a53ff6b9160d8d1e5e612f9934a3ba00f029",
+      "producer/global_axial_c1b_gating.py": "44bb616549de2399268433fc27271936f1d369cb",
+      "producer/global_axial_c1b_kernel.py": "9c2c484a0fc353e59d3f211fd7a6e1b9e9d2b337",
       "producer/global_axial_c1b_producer.py": "0616fbd7c9c85f77c8e80b61a5b3b536b45012a8"
     },
     "expected_environment": {
@@ -125,6 +133,10 @@
       }
     },
     "ref": "implementation/gt-boundary-two-chart",
+    "requirements_sha256": {
+      "requirements-interval.txt": "cd171f53dd8a187b2ef4bd7ad0cc2adbe2082395646c0c57407f4e3514c11f5c",
+      "requirements-prototype.txt": "2fee6d6bf48308ae7c510558f538b64dcb932d084efb9d4ff39199feff55ba3f"
+    },
     "wheel_dir": "/home/daybreak/basepoint-geometry-artifacts/C1b/20260905T140551Z/wheels",
     "wheel_sha256": {
       "mpmath-1.4.1-py3-none-any.whl": "dc4f0ea2304480d4a9a48a94c1020571558ade522b44a6912efac63a586e140f",
