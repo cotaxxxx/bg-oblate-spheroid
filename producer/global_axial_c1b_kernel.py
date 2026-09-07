@@ -32,14 +32,15 @@ T_STAGES = (("T0", 8, 4, 4096), ("T1", 16, 8, 4096), ("T2", 32, 16, 8192))
 ROOT_MV_STEPS = 8
 ROOT_G_PANELS, ROOT_GT_PANELS, ROOT_GL_PANELS = 32768, 8192, 8192
 ROOT_GT_T_CELLS = 16
+ROOT_GL_T_CELLS = 16
 E0_TBOXES, E0_LBOXES = 24, 8
 E_STAGES = (("E0", 1024), ("E1", 2048), ("E2", 4096))
 E_BOX_CAP = 4096
 MONO_WORK_CAP = 1_048_576
 PRED_GRID_DEN, PRED_SCAN_PANELS = 1024, 256
-ATTEMPT_WORK_CEILING = 24_608_768
-GLOBAL_ATTEMPT_WORK_CEILING = 51_678_412_800
-ACCEPTED_WORK_CEILING = 27_561_820_160
+ATTEMPT_WORK_CEILING = 25_591_808
+GLOBAL_ATTEMPT_WORK_CEILING = 53_742_796_800
+ACCEPTED_WORK_CEILING = 28_662_824_960
 BOB_RECEIPT = Path("analysis/GLOBAL_AXIAL_C1B_BOB_MACHINE_RECEIPT.md")
 BOB_EVIDENCE_HEAD = "25efb59b851eb9d7a3d5ce30309eb8903d976930"
 BOB_CONTRACT_BLOB = "215193e2fc2a1abcf2aee2527c4c2e6f3176ea6c"
@@ -130,6 +131,8 @@ def glam_box(tl, tr, ll, lr, panels):
     return z, stats, panels
 
 def _arb_exact_fraction(x):
+    if not x.is_finite():
+        raise RuntimeError("ROOT_NONFINITE_ARB_BOUND")
     if not x.is_exact():
         raise RuntimeError("ROOT_NONEXACT_ARB_BOUND")
     mantissa, exponent = x.man_exp()
@@ -145,10 +148,19 @@ def _arb_snapshot(x):
         "upper": x.upper().str(50),
     }
 
+def _arb_bounds_finite(x):
+    return bool(x.lower().is_finite() and x.upper().is_finite())
+
 def _newton_candidate(t_ref, gpar, gt):
     if not gt.upper() < 0:
         return None
-    return base._point(t_ref) - gpar / gt
+    quotient = gpar / gt
+    if not _arb_bounds_finite(quotient):
+        return None
+    candidate = base._point(t_ref) - quotient
+    if not _arb_bounds_finite(candidate):
+        return None
+    return candidate
 
 def _intersect_newton(lo, hi, candidate):
     nlo = _arb_exact_fraction(candidate.lower())
@@ -229,6 +241,36 @@ def predictor_selection_controls():
         if not ok:
             raise SystemExit("PREDICTOR_SELECTION_CONTROL_FAIL")
 
+
+def root_nonfinite_controls():
+    finite_cases = ((Fraction(3, 2), Fraction(3, 2)), (Fraction(-5, 8), Fraction(-5, 8)))
+    ok1 = all(_arb_exact_fraction(base._point(src)) == expected for src, expected in finite_cases)
+    print("C1B_ROOT_NONFINITE_CONTROL", 1, "PASS" if ok1 else "FAIL")
+    if not ok1:
+        raise SystemExit("ROOT_NONFINITE_CONTROL_FAIL")
+    for index, value in ((2, arb("+inf")), (3, arb("nan"))):
+        ok = False
+        try:
+            _arb_exact_fraction(value)
+        except RuntimeError as exc:
+            ok = str(exc) == "ROOT_NONFINITE_ARB_BOUND"
+        print("C1B_ROOT_NONFINITE_CONTROL", index, "PASS" if ok else "FAIL")
+        if not ok:
+            raise SystemExit("ROOT_NONFINITE_CONTROL_FAIL")
+    cand = _newton_candidate(Fraction(3, 4), arb("nan"), base._point(Fraction(-1, 2)))
+    ok4 = cand is None
+    print("C1B_ROOT_NONFINITE_CONTROL", 4, "PASS" if ok4 else "FAIL")
+    if not ok4:
+        raise SystemExit("ROOT_NONFINITE_CONTROL_FAIL")
+    balls = (base._box(base._point(Fraction(-2)), base._point(Fraction(-1))),
+             base._box(base._point(Fraction(1)), base._point(Fraction(3))))
+    hull = _outward_hull(balls)
+    expected_lo = min(_arb_exact_fraction(v.lower()) for v in balls)
+    expected_hi = max(_arb_exact_fraction(v.upper()) for v in balls)
+    ok5 = _arb_exact_fraction(hull.lower()) <= expected_lo and _arb_exact_fraction(hull.upper()) >= expected_hi
+    print("C1B_ROOT_NONFINITE_CONTROL", 5, "PASS" if ok5 else "FAIL")
+    if not ok5:
+        raise SystemExit("ROOT_NONFINITE_CONTROL_FAIL")
 
 def mono_closure_controls():
     controls = (
@@ -350,12 +392,11 @@ def root_localize(slab, tm, tp):
             break
         t_ref = (lo + hi) / 2
         T_k = (lo, hi)
-        G0 = Gl = Gpar = candidate = None
-        gt_cells = []
-        gt_values = []
+        G0 = Gt = Gl = Gpar = candidate = None
+        gt_cells, gt_values = [], []
+        gl_cells, gl_values = [], []
         gt_charts = defaultdict(int)
-        gl_stats = {}
-        empty_intersection = False
+        gl_stats = defaultdict(int)
         try:
             work += ROOT_G_PANELS
             G0, _ = g_box(t_ref, t_ref, lambda_c, lambda_c, ROOT_G_PANELS)
@@ -373,23 +414,48 @@ def root_localize(slab, tm, tp):
                     "work": ROOT_GT_PANELS,
                 })
             Gt = _outward_hull(gt_values)
-            work += ROOT_GL_PANELS
-            Gl, gl_stats, _ = glam_box(lo, hi, slab.ll, slab.lr, ROOT_GL_PANELS)
+            for cell_lo, cell_hi in split(lo, hi, ROOT_GL_T_CELLS):
+                work += ROOT_GL_PANELS
+                value, stats, _ = glam_box(cell_lo, cell_hi, slab.ll, slab.lr, ROOT_GL_PANELS)
+                for key, count in stats.items():
+                    gl_stats[key] += count
+                gl_values.append(value)
+                gl_cells.append({
+                    "t_cell": (cell_lo, cell_hi),
+                    "Gl": _arb_snapshot(value),
+                    "gl_stats": dict(stats),
+                    "work": ROOT_GL_PANELS,
+                })
+            Gl = _outward_hull(gl_values)
         except (ValueError, ZeroDivisionError):
             reason = "MV_EVAL_UNRESOLVED"
             break
         Gpar = G0 + Gl * dlambda
+        nonfinite = {
+            "G0": not _arb_bounds_finite(G0),
+            "Gt": not _arb_bounds_finite(Gt),
+            "Gl": not _arb_bounds_finite(Gl),
+            "Gpar": not _arb_bounds_finite(Gpar),
+        }
         all_guards = all(cell["guard"] for cell in gt_cells)
-        candidate = _newton_candidate(t_ref, Gpar, Gt) if all_guards else None
+        candidate = _newton_candidate(t_ref, Gpar, Gt) if all_guards and not any(nonfinite.values()) else None
         guard = candidate is not None
         base_rec = {
             "step": step, "T_k": T_k, "t_ref": t_ref, "lambda_c": lambda_c,
             "G0": _arb_snapshot(G0), "Gt": _arb_snapshot(Gt), "Gt_cells": gt_cells,
-            "Gl": _arb_snapshot(Gl), "Gpar": _arb_snapshot(Gpar),
-            "division_guard": guard, "gt_charts": dict(gt_charts), "gl_stats": gl_stats,
-            "empty_intersection": False,
-            "step_work": ROOT_G_PANELS + ROOT_GT_T_CELLS*ROOT_GT_PANELS + ROOT_GL_PANELS,
+            "Gl": _arb_snapshot(Gl), "Gl_cells": gl_cells, "Gpar": _arb_snapshot(Gpar),
+            "division_guard": guard, "gt_charts": dict(gt_charts), "gl_stats": dict(gl_stats),
+            "nonfinite": nonfinite, "empty_intersection": False,
+            "step_work": ROOT_G_PANELS + ROOT_GT_T_CELLS*ROOT_GT_PANELS + ROOT_GL_T_CELLS*ROOT_GL_PANELS,
         }
+        if any(nonfinite.values()):
+            base_rec.update({"N_k": None, "T_next": None, "width": hi-lo})
+            steps.append(base_rec)
+            reason = "MV_NONFINITE_ENCLOSURE"
+            print("C1B_ROOT_MV_STEP", slab.coarse, slab.depth, step,
+                  "guard", False, "reason", reason, "T_k", T_k, "t_ref", t_ref,
+                  "lambda_c", lambda_c, "nonfinite", nonfinite)
+            break
         if not guard:
             base_rec.update({"N_k": None, "T_next": None, "width": hi-lo})
             steps.append(base_rec)
@@ -638,7 +704,7 @@ def preflight():
     print("PREDICTOR_ACCEPT", PRED_ACCEPT, "ROOT_TARGET", ROOT_TARGET)
     print("CLAMP_RULE", "max(1/2,tc-w0)", "min(1,tc+w0)", "w0", W0)
     print("CORNER_RULE", "tr==1 and first s-panel => corner_hull")
-    print("T_STAGES", T_STAGES, "ROOT_MV", (ROOT_MV_STEPS,ROOT_G_PANELS,ROOT_GT_PANELS,ROOT_GL_PANELS), "ROOT_GT_T_CELLS", ROOT_GT_T_CELLS)
+    print("T_STAGES", T_STAGES, "ROOT_MV", (ROOT_MV_STEPS,ROOT_G_PANELS,ROOT_GT_PANELS,ROOT_GL_PANELS), "ROOT_GT_T_CELLS", ROOT_GT_T_CELLS, "ROOT_GL_T_CELLS", ROOT_GL_T_CELLS)
     print("E_POLICY", E0_TBOXES, E0_LBOXES, E_STAGES, "cap", E_BOX_CAP)
     print("MONO_RULE left: Gt<0 on [a,t-]xL and G(t-)>0 => G>0 ; right: Gt<0 on [t+,b]xL and G(t+)<0 => G<0")
     print("MONO_WORK_CAP", MONO_WORK_CAP)
@@ -647,6 +713,7 @@ def preflight():
     print("WORK_CEILINGS", ATTEMPT_WORK_CEILING, ACCEPTED_WORK_CEILING, GLOBAL_ATTEMPT_WORK_CEILING)
     if not ok: raise SystemExit("PREFLIGHT_FAIL")
     predictor_selection_controls()
+    root_nonfinite_controls()
     mono_closure_controls()
     bob_preflight()
 
