@@ -83,7 +83,9 @@ defects behind an UNRESOLVED verdict. It is caught only at the C1b evaluator bou
 stage, the exterior stage (sign test and MONO closure), the root step's g/Gl calls, and the
 predictor scan, i.e. every call site that reaches the new primitive — and is converted there into
 the non-finite outcome of §2, with kind = "R_ENDPOINT_DOMAIN_GUARD" in the nonfinite record so that
-it is distinguishable from a plain Arb NaN. The resulting semantics is:
+it is distinguishable from a plain Arb NaN. In predictor_scan, any guard or non-finite sample causes
+immediate scan termination with no bracket, and the attempt reason is PREDICTOR_NONFINITE; later
+samples are not examined and no sign change may be inferred across the failed sample. The resulting semantics is:
 
     endpoint evaluation not domain-safe
       → not a sign failure, not a crash
@@ -125,7 +127,10 @@ recorded as such and never conflated with a proven-negative or unproven-sign out
   reported, not what is accepted.
 
 The MONO closure of v2.4 inherits the same rule: a non-finite gt or wall makes the closure false and
-is recorded as non-finite rather than as a failed monotonicity test.
+is recorded as non-finite rather than as a failed monotonicity test. A.1 remains the exact 15-key
+producer schema, replay remains the exact 16-key schema, and comparison A1_KEYS remains the exact
+14-key set of v2.4.2; nonfinite records and TUBE_NONFINITE / EXTERIOR_NONFINITE /
+PREDICTOR_NONFINITE belong only to A.2 diagnostics and do not add, remove or reinterpret any A.1 key.
 
 ## 3. Work accounting
 
@@ -220,3 +225,10 @@ non-numerical import added outside that graph changes no control outcome.
 - Open, recorded: whether other clamped quantities in the geometry are rebuilt through _box and can
   leak past their a priori bounds by the same mag-rounding mechanism. The new non-finite records of
   §2 make any such case visible instead of silent.
+
+## 7. Required sequence
+
+The binding order is implementation commit → chat raw audit → explicit push approval and push → new
+manifest → preflight including C1–C7 → a fresh Phase 1 RUN_DIR and full producer rerun → Phase 2
+checker → comparison → receipt; c1b_producer_20260907T073426Z remains historical control only, and
+all push and tag operations remain approval-gated.
