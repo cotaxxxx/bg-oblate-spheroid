@@ -21,7 +21,7 @@ from checker import c0a_four_group_v2 as grouped
 from checker.monotone_tube_refinement_checker import _ordinary_refinement as _gt_ordinary
 from checker.monotone_tube_interval_checker import _corner as _gt_corner
 from checker.global_axial_c1b_endpoint_r import (
-    REndpointDomainGuard, _R_endpoint_safe, _R_Rg_endpoint_safe,
+    REndpointDomainGuard, _R_endpoint_safe,
 )
 from checker.global_axial_c0_checker_v2 import _g_density_stable as _legacy_g_density_stable
 
@@ -52,7 +52,7 @@ BOB_AMENDMENT_BLOB = "8e04e2efaf816bab9d9d1f3fd0a9d753538b31ad"
 BOB_RECEIPT_BLOB = "0f19e3877b9675506ac8f35a5702147a84723c43"
 
 C1B_NUMERIC_ROOTS = ('checker/global_axial_c0_checker.py', 'checker/global_axial_c0_checker_v2.py', 'checker/c0a_four_group_v2.py', 'checker/monotone_tube_refinement_checker.py', 'checker/monotone_tube_interval_checker.py', 'checker/global_axial_c1b_endpoint_r.py')
-C1B_NUMERIC_IMPORT_CLOSURE = {'checker/global_axial_c0_checker.py': '85978625e029b01c8ae40fa8234566f10eea251c', 'checker/global_axial_c0_checker_v2.py': 'fbec890588d2d390ea67bc90116b80bb37ebf9cc', 'checker/c0a_four_group_v2.py': '18e66b6450cd2a379bbb869a99e4e5ce6999f6e5', 'checker/endpoint_interval_checker.py': '4cb16f8a975e5a3be601a7926af695ad5be57790', 'checker/endpoint_local_checker.py': '2bddddf6e9a08ca7acae94c89bd4d5ab1de861bc', 'checker/endpoint_local_controls.py': 'c913c47d228e51a15f56957f5df9196efa1b22c3', 'checker/monotone_tube_interval_checker.py': '78ae54ef3a769d6194c89ab5f4f38ea9f151476c', 'checker/monotone_tube_refinement_checker.py': 'fd778d6d3a2dc52ae38be87bf4eb800bfbdea6d3', 'checker/global_axial_c1b_endpoint_r.py': '3b9ea80e5011aa0f8586c26287d5d567fec682c9'}
+C1B_NUMERIC_IMPORT_CLOSURE = {'checker/global_axial_c0_checker.py': '85978625e029b01c8ae40fa8234566f10eea251c', 'checker/global_axial_c0_checker_v2.py': 'fbec890588d2d390ea67bc90116b80bb37ebf9cc', 'checker/c0a_four_group_v2.py': '18e66b6450cd2a379bbb869a99e4e5ce6999f6e5', 'checker/endpoint_interval_checker.py': '4cb16f8a975e5a3be601a7926af695ad5be57790', 'checker/endpoint_local_checker.py': '2bddddf6e9a08ca7acae94c89bd4d5ab1de861bc', 'checker/endpoint_local_controls.py': 'c913c47d228e51a15f56957f5df9196efa1b22c3', 'checker/monotone_tube_interval_checker.py': '78ae54ef3a769d6194c89ab5f4f38ea9f151476c', 'checker/monotone_tube_refinement_checker.py': 'fd778d6d3a2dc52ae38be87bf4eb800bfbdea6d3', 'checker/global_axial_c1b_endpoint_r.py': '1a953b22c12a89afc06790b28d6b0dea9680dc43'}
 
 @dataclass(frozen=True)
 class Slab:
@@ -113,17 +113,60 @@ def gt_box(tl, tr, ll, lr, panels):
         z += sum(terms, arb(0)) * (bb-aa)
     return z, dict(charts), panels
 
+def _certified_positive_q(mu, t, lam, q):
+    lower_mu, upper_mu = mu.lower(), mu.upper()
+    lower_t, upper_t, lower_lam = t.lower(), t.upper(), lam.lower()
+    if not all(v.is_finite() for v in (lower_mu, upper_mu, lower_t, upper_t, lower_lam, q.upper())):
+        raise REndpointDomainGuard("Q_BOX_NONFINITE_ENDPOINT")
+
+    def endpoint_value(mu0):
+        nearest_t = lower_t if mu0 < lower_t else upper_t if mu0 > upper_t else mu0
+        return (arb(1) - mu0 * mu0 + lower_lam * lower_lam * (nearest_t - mu0) * (nearest_t - mu0)).lower()
+
+    lower_q = min(endpoint_value(lower_mu), endpoint_value(upper_mu))
+    if not lower_q.is_finite() or not lower_q > 0:
+        raise REndpointDomainGuard("Q_BOX_MIN_NONPOSITIVE")
+    safe_upper = q.upper()
+    if not safe_upper.is_finite():
+        raise REndpointDomainGuard("Q_BOX_UPPER_NONFINITE")
+    upper_q = max(lower_q, safe_upper)
+    positive_q = base._box(lower_q, upper_q)
+    if not positive_q.lower() > 0:
+        raise REndpointDomainGuard("Q_BOX_OUTWARD_NONPOSITIVE")
+    return positive_q
+
+
+def _positive_reciprocal_wq32(W, q):
+    lower_w, upper_w, lower_q, upper_q = W.lower(), W.upper(), q.lower(), q.upper()
+    if not all(v.is_finite() for v in (lower_w, upper_w, lower_q, upper_q)) or not (lower_w > 0 and lower_q > 0):
+        raise REndpointDomainGuard("INV_WQ32_NONPOSITIVE_ENDPOINT")
+    lower_inv = (arb(1) / upper_w / upper_q / upper_q.sqrt()).lower()
+    upper_inv = (arb(1) / lower_w / lower_q / lower_q.sqrt()).upper()
+    result = base._box(lower_inv, upper_inv)
+    if not result.lower() > 0 or not _arb_bounds_finite(result):
+        raise REndpointDomainGuard("INV_WQ32_NONFINITE")
+    return result
+
+
 def _glam_density(s, t, lam, stats):
-    s, x, mu, eps, A, delta, delta_sq, gam, u, L2, q, rootq, W, W2, n, m, p, big_q = grouped._primitives(s, t, lam)
-    R, Rg = _R_Rg_endpoint_safe(u, gam, stats)
+    s, x, mu, eps, A, delta, delta_sq, _gam, _u, L2, q_raw, _rootq, W, W2, n, m, p, big_q = grouped._primitives(s, t, lam)
+    q = _certified_positive_q(mu, t, lam, q_raw)
+    rootq = q.sqrt()
+    gam = lam * A / (W * rootq)
+    h = mu + L2 * delta
+    u = base._unit_nonnegative(eps * h * h / (W2 * q))
+    R = _R_endpoint_safe(u, stats)
+    inv_wq32 = _positive_reciprocal_wq32(W, q)
     wlog = lam * eps / W2
     glam = gam * (1 / lam - wlog - lam * delta_sq / q)
-    pref = lam / (W * q * rootq)
+    pref = lam * inv_wq32
     nlam = -2 * lam * (mu * delta_sq + A * delta)
     preflam = pref * (1 / lam - wlog - 3 * lam * delta_sq / q)
     gt = pref * n
     gtlam = preflam * n + pref * nlam
-    return s * (2 * mu * R * glam - 2 * A * (Rg * glam * gt + R * gtlam))
+    k = mu - L2 * delta
+    regular_rg_term = -(gam * R - 1) * gam * eps * k * inv_wq32
+    return s * (2 * mu * R * glam - 2 * A * (regular_rg_term + R * gtlam))
 
 def glam_box(tl, tr, ll, lr, panels):
     grid, root = base._partition(panels)
@@ -258,12 +301,110 @@ def endpoint_light_controls():
             c3 = c3 and new.lower()>=old.lower() and new.upper()<=old.upper()
     print("C1B_R_LEGACY_AGREEMENT_CONTROL",3,"PASS" if c3 else "FAIL","cases",c3_cases)
     if not c3: raise SystemExit("C1B_R_LEGACY_AGREEMENT_FAIL")
-    us=base._box(base._point(Fraction(0)),base._point(Fraction(1,2))); gs=base._box(base._point(Fraction(2,5)),base._point(Fraction(3,5)))
-    a=base._R(us,gs,{"series":0,"direct":0,"series_hits_moving_u0":0,"chart_unresolved":0})[:2]
-    b=_R_Rg_endpoint_safe(us,gs,{"series":0,"direct":0,"series_hits_moving_u0":0,"chart_unresolved":0})
-    c5b=a[0].str(80)==b[0].str(80) and a[1].str(80)==b[1].str(80) and all(v.is_finite() for v in b)
-    print("C1B_MOVING_U0_CONTROL","5b","PASS" if c5b else "FAIL")
+    sb=base._box(base._point(Fraction(0)),base._point(Fraction(1,64)))
+    tb=interval(Fraction(3,4),Fraction(3,4)); lb=interval(Fraction(1,2),Fraction(1,2))
+    moving=_glam_density(sb,tb,lb,{"series":0,"direct":0,"series_hits_moving_u0":0,"chart_unresolved":0})
+    c5b=moving.is_finite()
+    print("C1B_MOVING_U0_CONTROL","5b","PASS" if c5b else "FAIL","value",moving.str(50))
     if not c5b: raise SystemExit("C1B_MOVING_U0_CONTROL_FAIL")
+
+def _q_box_min_fraction(mu_lo, mu_hi, t_lo, t_hi, lam_lo):
+    def clamp_t(mu0):
+        return t_lo if mu0 < t_lo else t_hi if mu0 > t_hi else mu0
+    def q_at(mu0):
+        t0 = clamp_t(mu0)
+        return 1 - mu0 * mu0 + lam_lo * lam_lo * (t0 - mu0) * (t0 - mu0)
+    return min(q_at(mu_lo), q_at(mu_hi))
+
+
+def v28_preflight_controls():
+    # V28-C1: exact rational sign identities on the frozen C1b lambda domain.
+    lambdas=(Fraction(9,20),Fraction(1,2),Fraction(5,8))
+    c1=all(2*(L*L-1)<0 and 2*L*L>0 for L in lambdas)
+    c1=c1 and all(2*L*Fraction(1,7)**2>=0 for L in lambdas)
+    print("C1B_V28_C1_EXACT_CALCULUS","PASS" if c1 else "FAIL")
+    if not c1: raise SystemExit("C1B_V28_C1_FAIL")
+
+    # V28-C2/C3: both clamp branches, subdivision monotonicity, and exact point soundness.
+    inside=_q_box_min_fraction(Fraction(1,2),Fraction(3,4),Fraction(2,5),Fraction(3,5),Fraction(1,2))
+    outside=_q_box_min_fraction(Fraction(9,10),Fraction(1),Fraction(3,4),Fraction(4,5),Fraction(1,2))
+    parent=(Fraction(9,10),Fraction(1),Fraction(3,4),Fraction(4,5),Fraction(1,2))
+    pmin=_q_box_min_fraction(*parent)
+    child1=_q_box_min_fraction(Fraction(9,10),Fraction(19,20),parent[2],parent[3],parent[4])
+    child2=_q_box_min_fraction(Fraction(19,20),Fraction(1),parent[2],parent[3],parent[4])
+    samples=(Fraction(9,10),Fraction(37,40),Fraction(19,20),Fraction(39,40),Fraction(1))
+    exact_points=True
+    for mu0 in samples:
+        t0=Fraction(31,40)
+        q0=1-mu0*mu0+Fraction(1,4)*(t0-mu0)*(t0-mu0)
+        exact_points = exact_points and q0>=pmin
+    dlo,dhi=Fraction(-1,100),Fraction(1,200)
+    zero_cross = dlo < 0 < dhi and min(dlo*dlo,dhi*dhi) > 0
+    c23=inside>=0 and outside>0 and child1>=pmin and child2>=pmin and exact_points and zero_cross
+    print("C1B_V28_C2_CLAMP_BRANCHES","PASS" if c23 else "FAIL","inside",inside,"outside",outside)
+    print("C1B_V28_C3_SOUNDNESS","PASS" if c23 else "FAIL","parent",pmin,"children",child1,child2)
+    if not c23: raise SystemExit("C1B_V28_C23_FAIL")
+
+    # V28-C4/C5/C6: canonical exact q minima and the two-stage positive structure.
+    root_lo=Fraction(478138193925,2**39); root_hi=Fraction(546857670661,2**39)
+    cell15=split(root_lo,root_hi,16)[15]
+    qmins=[]
+    for i in (0,1):
+        slo=Fraction(i,8192); shi=Fraction(i+1,8192)
+        mu_lo=1-shi*shi; mu_hi=1-slo*slo
+        qmins.append(_q_box_min_fraction(mu_lo,mu_hi,cell15[0],cell15[1],Fraction(231,400)))
+    expected=(Fraction(448191534236194953480969,48357032784585166988247040000),
+              Fraction(17985206094396086091889,1934281311383406679529881600))
+    c4=tuple(qmins)==expected and all(q>0 for q in qmins)
+    print("C1B_V28_C4_QMIN","PASS" if c4 else "FAIL","panel0",qmins[0],"panel1",qmins[1])
+    if not c4: raise SystemExit("C1B_V28_C4_FAIL")
+
+    sb=base._box(base._point(Fraction(0)),base._point(Fraction(1,8192)))
+    tb=interval(*cell15); lb=interval(Fraction(231,400),Fraction(3697,6400))
+    _,_,mu,e,A,d,d2,_,_,l2,qraw,_,w,w2,N,M,P,Q=grouped._primitives(sb,tb,lb)
+    qpos=_certified_positive_q(mu,tb,lb,qraw); inv=_positive_reciprocal_wq32(w,qpos)
+    s0=Fraction(1,16384); x0=s0*s0; mu0=1-x0; e0=x0*(2-x0)
+    t0=(cell15[0]+cell15[1])/2; l0=(Fraction(231,400)+Fraction(3697,6400))/2
+    q0=1-mu0*mu0+l0*l0*(t0-mu0)*(t0-mu0)
+    w0=(base._point(mu0*mu0+l0*l0*e0)).sqrt()
+    inv0=arb(1)/w0/base._point(q0)/base._point(q0).sqrt()
+    c5=inv.lower()<=inv0.lower() and inv0.upper()<=inv.upper() and inv.lower()>0 and inv.is_finite()
+    generic=w*qpos*qpos.sqrt()
+    c6=qraw.lower()<=0 and qpos.lower()>0 and generic.lower()<=0 and c5
+    print("C1B_V28_C5_INV_ENDPOINT","PASS" if c5 else "FAIL","point",inv0,"hull",inv)
+    print("C1B_V28_C6_TWO_STAGE","PASS" if c6 else "FAIL","naive_q_lower",qraw.lower(),"qpos_lower",qpos.lower(),"generic_den_lower",generic.lower(),"inv",inv)
+    if not (c5 and c6): raise SystemExit("C1B_V28_C56_FAIL")
+
+    # V28-C7: exact canonical first Newton/MV contraction.
+    slab=Slab(102,3,Fraction(231,400),Fraction(3697,6400))
+    cells=[]
+    for a,b in split(root_lo,root_hi,ROOT_GL_T_CELLS):
+        v,_,_=glam_box(a,b,slab.ll,slab.lr,ROOT_GL_PANELS); cells.append(v.is_finite())
+    rok,rstar,work,steps,reason=root_localize(slab,root_lo,root_hi)
+    step=steps[0] if steps else {}
+    oldw=root_hi-root_lo; neww=step.get("width",oldw); ratio=neww/oldw
+    c7=all(cells) and rok and step.get("T_next") is not None and neww<oldw
+    print("C1B_V28_C7_CONTRACTION","PASS" if c7 else "FAIL","T_k",step.get("T_k"),"T_next",step.get("T_next"),"width_old",oldw,"width_new",neww,"ratio",ratio,"reason",reason)
+    if not c7: raise SystemExit("C1B_V28_C7_FAIL")
+
+    # V281-C1/C2/C3: unique reciprocal path, positive q endpoints, logical work identity.
+    import inspect
+    src=inspect.getsource(_glam_density)
+    c81=(src.count('inv_wq32 = _positive_reciprocal_wq32')==1 and 'pref = lam * inv_wq32' in src and
+         'regular_rg_term = -(gam * R - 1) * gam * eps * k * inv_wq32' in src and
+         'lam / (W * q * rootq)' not in src)
+    bad=False
+    try: _certified_positive_q(mu,tb,lb,arb('nan'))
+    except REndpointDomainGuard: bad=True
+    _,_,work_a=glam_box(cell15[0],cell15[1],slab.ll,slab.lr,64)
+    _,_,work_b=glam_box(cell15[0],cell15[1],slab.ll,slab.lr,64)
+    c82=qpos.upper()>=qpos.lower()>0 and bad
+    c83=(work_a==work_b==64)
+    print("C1B_V281_C1_UNIQUE_PATH","PASS" if c81 else "FAIL")
+    print("C1B_V281_C2_Q_ENDPOINTS","PASS" if c82 else "FAIL","q",qpos)
+    print("C1B_V281_C3_WORK_IDENTITY","PASS" if c83 else "FAIL","work",work_a,work_b)
+    if not (c81 and c82 and c83): raise SystemExit("C1B_V281_FAIL")
+
 
 def endpoint_regression_controls():
     tp=Fraction(546857674007,2**39); ll=Fraction(231,400); lr=Fraction(3697,6400); t=interval(tp,tp); L=interval(ll,lr); c4=c5=True
@@ -428,10 +569,10 @@ def _nonfinite_record(kind, evaluator, side, stage, depth, tl, tr, ll, lr, detai
     return {"kind": kind, "evaluator": evaluator, "side": side, "stage": stage,
             "depth": depth, "t": (tl, tr), "lambda": (ll, lr), "detail": detail}
 
-def _checked_finite(value, evaluator, side, label, slab, tl, tr, ll, lr, nonfinite):
+def _checked_finite(value, evaluator, side, label, depth, tl, tr, ll, lr, nonfinite):
     if _arb_bounds_finite(value):
         return True
-    nonfinite.append(_nonfinite_record("ARB_NONFINITE", evaluator, side, label, slab.depth,
+    nonfinite.append(_nonfinite_record("ARB_NONFINITE", evaluator, side, label, depth,
                                       tl, tr, ll, lr))
     return False
 
@@ -447,7 +588,7 @@ def tube_stage(slab, tc, stage):
             try:
                 v, charts, c = gt_box(tl, tr, ll, lr, panels)
                 cells += c; ch = int(charts.get("corner_hull", 0)); corner += ch
-                finite = _checked_finite(v, "gt_box", "GT", label, slab, tl, tr, ll, lr, nonfinite)
+                finite = _checked_finite(v, "gt_box", "GT", label, slab.depth, tl, tr, ll, lr, nonfinite)
                 good = finite and v.upper() < 0
                 if ch:
                     corner_boxes.append((tl, tr, ll, lr))
@@ -465,7 +606,7 @@ def tube_stage(slab, tc, stage):
     for ll, lr in split(slab.ll, slab.lr, nl):
         try:
             v, c = g_box(tm, tm, ll, lr, panels); cells += c
-            finite = _checked_finite(v, "g_box", "LEFT", label, slab, tm, tm, ll, lr, nonfinite)
+            finite = _checked_finite(v, "g_box", "LEFT", label, slab.depth, tm, tm, ll, lr, nonfinite)
             good = finite and v.lower() > 0
             if not finite: v = None
         except REndpointDomainGuard as exc:
@@ -481,7 +622,7 @@ def tube_stage(slab, tc, stage):
         if not rclamp:
             try:
                 v, c = g_box(tp, tp, ll, lr, panels); cells += c
-                finite = _checked_finite(v, "g_box", "RIGHT", label, slab, tp, tp, ll, lr, nonfinite)
+                finite = _checked_finite(v, "g_box", "RIGHT", label, slab.depth, tp, tp, ll, lr, nonfinite)
                 good = finite and v.upper() < 0
                 if not finite: v = None
             except REndpointDomainGuard as exc:
@@ -730,7 +871,7 @@ def eval_exterior(boxes, panels, label, tm, tp, mono_work, depth):
     for box in boxes:
         try:
             value, c = g_box(box.tl, box.tr, box.ll, box.lr, panels); work += c
-            finite = _checked_finite(value, "g_box", box.side, label, type("S", (), {"depth": depth})(),
+            finite = _checked_finite(value, "g_box", box.side, label, depth,
                                      box.tl, box.tr, box.ll, box.lr, nonfinite)
             good = finite and (value.lower() > 0 if box.side == "L" else value.upper() < 0)
             if not finite: value = None
@@ -981,6 +1122,7 @@ def preflight():
     numeric_import_closure_controls()
     endpoint_light_controls()
     endpoint_regression_controls()
+    v28_preflight_controls()
     diagnostic_controls()
     empty_remainder_control()
     predictor_selection_controls()

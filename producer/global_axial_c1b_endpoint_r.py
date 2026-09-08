@@ -1,4 +1,4 @@
-"""C1b endpoint-safe R/Rg evaluator (producer lineage only)."""
+"""C1b endpoint-safe R evaluator (producer lineage only)."""
 from flint import arb
 from producer import global_axial_c0_producer as base
 
@@ -27,16 +27,3 @@ def _R_endpoint_safe(u, stats):
     rhi = _R_point(hi)
     stats["endpoint_safe"] = stats.get("endpoint_safe", 0) + 1
     return base._box(rlo.lower(), rhi.upper())
-
-
-def _R_Rg_endpoint_safe(u, gamma, stats):
-    # Preserve the certified small-u / moving-u=0 series chart exactly.
-    if u.upper() <= base.USTAR:
-        R, Rg, _, _ = base._R_bundle(u, gamma, stats)
-        return R, Rg
-    if not u.lower() > 0:
-        raise REndpointDomainGuard("R_ENDPOINT_DIRECT_BRANCH_ZERO_DENOMINATOR")
-    R = _R_endpoint_safe(u, stats)
-    stats["direct"] = stats.get("direct", 0) + 1
-    Rg = (gamma * R - 1) / u
-    return R, Rg
