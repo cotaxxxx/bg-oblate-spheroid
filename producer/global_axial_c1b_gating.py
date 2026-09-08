@@ -155,6 +155,16 @@ def _serialize_guard(guard):
         "truth": bool(truth),
     }
 
+def _serialize_nonfinite(rec):
+    tl, tr = rec["t"]; ll, lr = rec["lambda"]
+    return {
+        "kind": rec["kind"], "detail": rec.get("detail"),
+        "evaluator": rec["evaluator"], "side": rec["side"], "stage": rec["stage"],
+        "depth": int(rec["depth"]),
+        "t_lo": persistence.rational_text(tl), "t_hi": persistence.rational_text(tr),
+        "lambda_lo": persistence.rational_text(ll), "lambda_hi": persistence.rational_text(lr),
+    }
+
 def serialize_mv_step(step):
     return {
         "step": int(step["step"]),
@@ -180,6 +190,7 @@ def serialize_mv_step(step):
         "gt_charts": {str(k): int(v) for k, v in step["gt_charts"].items()},
         "gl_stats": {str(k): int(v) for k, v in step["gl_stats"].items()},
         "step_work": int(step["step_work"]),
+        "nonfinite": step.get("nonfinite"),
     }
 
 def serialize_record(rec, tc, mode, work, reason, trace):
@@ -189,13 +200,17 @@ def serialize_record(rec, tc, mode, work, reason, trace):
         "T_star": None, "left_clamp": None, "right_clamp": None,
         "t_minus": None, "t_plus": None, "T_0": None,
         "root_gt_t_cells": 16, "corner_hull": None, "corner_boxes": [],
-        "tube_stage": None, "tube_guards": [], "exterior_guards": [],
+        "tube_stage": None, "tube_guards": [], "tube_nonfinite": [],
+        "exterior_guards": [], "exterior_nonfinite": [], "predictor_nonfinite": [],
         "sup_error": None, "middle_partition": None,
         "work": {k: int(v) for k, v in work.items()},
         "work_total": int(sum(work.values())), "reason": reason, "trace": trace,
         "root_mv_steps": [], "root_reason": None,
     }
     if rec is None:
+        return empty
+    empty["predictor_nonfinite"] = [_serialize_nonfinite(x) for x in rec.get("predictor_nonfinite", ())]
+    if rec.get("predictor_only"):
         return empty
     empty.update({
         "predictor_mode": rec["mode"],
@@ -209,7 +224,9 @@ def serialize_record(rec, tc, mode, work, reason, trace):
         "corner_boxes": [[persistence.rational_text(v) for v in box] for box in rec.get("corner_boxes", ())],
         "tube_stage": rec["tube_stage"],
         "tube_guards": [_serialize_guard(x) for x in rec.get("tube_guards", ())],
+        "tube_nonfinite": [_serialize_nonfinite(x) for x in rec.get("tube_nonfinite", ())],
         "exterior_guards": [_serialize_guard(x) for x in rec.get("exterior_guards", ())],
+        "exterior_nonfinite": [_serialize_nonfinite(x) for x in rec.get("exterior_nonfinite", ())],
         "sup_error": None if rec["sup_error"] is None else persistence.rational_text(rec["sup_error"]),
         "root_mv_steps": [serialize_mv_step(x) for x in rec.get("root_steps", [])],
         "root_reason": rec.get("root_reason"),

@@ -7,6 +7,7 @@ Status: IMPLEMENTED_PROTOTYPE / MACHINE_NOT_RUN / NOT_BINDING.
 """
 from __future__ import annotations
 import argparse
+import ast
 import hashlib
 from collections import defaultdict
 from dataclasses import dataclass
@@ -19,6 +20,10 @@ from checker import global_axial_c0_checker as base
 from checker import c0a_four_group_v2 as grouped
 from checker.monotone_tube_refinement_checker import _ordinary_refinement as _gt_ordinary
 from checker.monotone_tube_interval_checker import _corner as _gt_corner
+from checker.global_axial_c1b_endpoint_r import (
+    REndpointDomainGuard, _R_endpoint_safe, _R_Rg_endpoint_safe,
+)
+from checker.global_axial_c0_checker_v2 import _g_density_stable as _legacy_g_density_stable
 
 BITS, DEG = 192, 50
 USTAR = Fraction(3, 5)
@@ -45,6 +50,9 @@ BOB_EVIDENCE_HEAD = "25efb59b851eb9d7a3d5ce30309eb8903d976930"
 BOB_CONTRACT_BLOB = "215193e2fc2a1abcf2aee2527c4c2e6f3176ea6c"
 BOB_AMENDMENT_BLOB = "8e04e2efaf816bab9d9d1f3fd0a9d753538b31ad"
 BOB_RECEIPT_BLOB = "0f19e3877b9675506ac8f35a5702147a84723c43"
+
+C1B_NUMERIC_ROOTS = ('checker/global_axial_c0_checker.py', 'checker/global_axial_c0_checker_v2.py', 'checker/c0a_four_group_v2.py', 'checker/monotone_tube_refinement_checker.py', 'checker/monotone_tube_interval_checker.py', 'checker/global_axial_c1b_endpoint_r.py')
+C1B_NUMERIC_IMPORT_CLOSURE = {'checker/global_axial_c0_checker.py': '85978625e029b01c8ae40fa8234566f10eea251c', 'checker/global_axial_c0_checker_v2.py': 'fbec890588d2d390ea67bc90116b80bb37ebf9cc', 'checker/c0a_four_group_v2.py': '18e66b6450cd2a379bbb869a99e4e5ce6999f6e5', 'checker/endpoint_interval_checker.py': '4cb16f8a975e5a3be601a7926af695ad5be57790', 'checker/endpoint_local_checker.py': '2bddddf6e9a08ca7acae94c89bd4d5ab1de861bc', 'checker/endpoint_local_controls.py': 'c913c47d228e51a15f56957f5df9196efa1b22c3', 'checker/monotone_tube_interval_checker.py': '78ae54ef3a769d6194c89ab5f4f38ea9f151476c', 'checker/monotone_tube_refinement_checker.py': 'fd778d6d3a2dc52ae38be87bf4eb800bfbdea6d3', 'checker/global_axial_c1b_endpoint_r.py': '3b9ea80e5011aa0f8586c26287d5d567fec682c9'}
 
 @dataclass(frozen=True)
 class Slab:
@@ -73,7 +81,7 @@ def _stats():
 
 def _g_density_stable(s, t, L, stats):
     s, x, mu, eps, A, delta, delta_sq, gam, u, L2, q, rootq, W, W2, n, m, p, big_q = grouped._primitives(s, t, L)
-    R, _, _, _ = base._R(u, gam, stats)
+    R = _R_endpoint_safe(u, stats)
     gt = L * n / (W * q * rootq)
     alpha2 = u * R * R
     return s * (-mu * alpha2 - 2 * A * R * gt)
@@ -107,7 +115,7 @@ def gt_box(tl, tr, ll, lr, panels):
 
 def _glam_density(s, t, lam, stats):
     s, x, mu, eps, A, delta, delta_sq, gam, u, L2, q, rootq, W, W2, n, m, p, big_q = grouped._primitives(s, t, lam)
-    R, Rg, _, _ = base._R(u, gam, stats)
+    R, Rg = _R_Rg_endpoint_safe(u, gam, stats)
     wlog = lam * eps / W2
     glam = gam * (1 / lam - wlog - lam * delta_sq / q)
     pref = lam / (W * q * rootq)
@@ -168,6 +176,110 @@ def _intersect_newton(lo, hi, candidate):
         raise RuntimeError("ROOT_EMPTY_INTERSECTION")
     return new_lo, new_hi
 
+def _git_blob_bytes(path):
+    data=Path(path).read_bytes()
+    return hashlib.sha1(f"blob {len(data)}\0".encode()+data).hexdigest()
+
+def _numeric_dependency_closure():
+    seen=set(); stack=list(C1B_NUMERIC_ROOTS); package="checker"
+    while stack:
+        rel=stack.pop()
+        if rel in seen: continue
+        q=Path(rel)
+        if not q.is_file(): raise SystemExit("NUMERIC_IMPORT_CLOSURE_FAIL")
+        seen.add(rel); tree=ast.parse(q.read_text())
+        for node in ast.walk(tree):
+            names=[]
+            if isinstance(node,ast.Import): names=[a.name for a in node.names]
+            elif isinstance(node,ast.ImportFrom) and node.module:
+                names=[node.module]
+                if node.module==package: names += [package+"."+a.name for a in node.names]
+            for name in names:
+                if name==package or name.startswith(package+"."):
+                    cand=name.replace(".","/")+".py"
+                    if Path(cand).is_file() and cand not in seen: stack.append(cand)
+    return seen
+
+def numeric_import_closure_preflight():
+    found=_numeric_dependency_closure(); declared=set(C1B_NUMERIC_IMPORT_CLOSURE); ok=(found==declared)
+    for rel in sorted(declared):
+        try: obs=_git_blob_bytes(rel)
+        except OSError: obs=None
+        exp=C1B_NUMERIC_IMPORT_CLOSURE[rel]; hit=(obs==exp); ok = ok and hit
+        print("C1B_NUMERIC_IMPORT_BLOB",rel,"PASS" if hit else "FAIL",exp,obs)
+    print("NUMERIC_IMPORT_CLOSURE_CHECK","PASS" if ok else "FAIL","declared",len(declared),"discovered",len(found),"missing",sorted(found-declared),"stale",sorted(declared-found))
+    if not ok: raise SystemExit("NUMERIC_IMPORT_CLOSURE_FAIL")
+
+def numeric_import_closure_controls():
+    global C1B_NUMERIC_ROOTS
+    key=sorted(C1B_NUMERIC_IMPORT_CLOSURE)[0]; old=C1B_NUMERIC_IMPORT_CLOSURE[key]
+    blob_fail=False
+    try:
+        C1B_NUMERIC_IMPORT_CLOSURE[key]="0"*40
+        try: numeric_import_closure_preflight()
+        except SystemExit as exc: blob_fail=(str(exc)=="NUMERIC_IMPORT_CLOSURE_FAIL")
+    finally:
+        C1B_NUMERIC_IMPORT_CLOSURE[key]=old
+    roots_old=C1B_NUMERIC_ROOTS; import_fail=False
+    try:
+        C1B_NUMERIC_ROOTS=roots_old+("checker/global_axial_c1a_checker.py",)
+        try: numeric_import_closure_preflight()
+        except SystemExit as exc: import_fail=(str(exc)=="NUMERIC_IMPORT_CLOSURE_FAIL")
+    finally:
+        C1B_NUMERIC_ROOTS=roots_old
+    ok=blob_fail and import_fail
+    print("C1B_NUMERIC_IMPORT_CLOSURE_CONTROL",7,"PASS" if ok else "FAIL",
+          "perturbed_blob_fail",blob_fail,"undeclared_numeric_root_fail",import_fail)
+    if not ok: raise SystemExit("C1B_NUMERIC_IMPORT_CLOSURE_CONTROL_FAIL")
+
+def endpoint_light_controls():
+    from math import comb
+    coeff_ok=all(Fraction(comb(2*n,n),4**n*(2*n+1))>0 for n in range(8))
+    vals=[_R_endpoint_safe(base._point(x),{}) for x in (Fraction(0),Fraction(1,4),Fraction(1,2),Fraction(3,4),Fraction(1))]
+    mono=all(a.upper()<b.lower() for a,b in zip(vals,vals[1:]))
+    endpoint_ok=(vals[0].lower() <= 1 <= vals[0].upper() and vals[-1].lower() <= arb.pi()/2 <= vals[-1].upper())
+    c1=coeff_ok and mono and endpoint_ok
+    print("C1B_R_ENDPOINT_CONTROL",1,"PASS" if c1 else "FAIL")
+    if not c1: raise SystemExit("C1B_R_ENDPOINT_CONTROL_FAIL")
+    c2=True
+    for x in (Fraction(9,10),Fraction(99,100),Fraction(999,1000)):
+        xb=base._point(x); rn=_R_endpoint_safe(xb,{}); comp=(arb.pi()/2-(1-xb).sqrt().asin())/xb.sqrt()
+        c2 = c2 and not (rn.upper()<comp.lower() or comp.upper()<rn.lower())
+    print("C1B_R_COMPLEMENT_CONTROL",2,"PASS" if c2 else "FAIL")
+    if not c2: raise SystemExit("C1B_R_COMPLEMENT_CONTROL_FAIL")
+    c3=True; c3_cases=0
+    for ulo,uhi in ((Fraction(1,10),Fraction(1,5)),(Fraction(2,5),Fraction(1,2)),
+                     (Fraction(7,10),Fraction(4,5)),(Fraction(9,10),Fraction(19,20))):
+        for glo,ghi in ((Fraction(1,5),Fraction(3,10)),(Fraction(3,5),Fraction(7,10))):
+            u=base._box(base._point(ulo),base._point(uhi)); g=base._box(base._point(glo),base._point(ghi))
+            old=base._R(u,g,{"series":0,"direct":0,"series_hits_moving_u0":0,"chart_unresolved":0})[0]
+            new=_R_endpoint_safe(u,{}); c3_cases += 1
+            c3 = c3 and old.is_finite() and new.is_finite() and not (new.upper()<old.lower() or old.upper()<new.lower())
+            c3 = c3 and new.lower()>=old.lower() and new.upper()<=old.upper()
+    print("C1B_R_LEGACY_AGREEMENT_CONTROL",3,"PASS" if c3 else "FAIL","cases",c3_cases)
+    if not c3: raise SystemExit("C1B_R_LEGACY_AGREEMENT_FAIL")
+    us=base._box(base._point(Fraction(0)),base._point(Fraction(1,2))); gs=base._box(base._point(Fraction(2,5)),base._point(Fraction(3,5)))
+    a=base._R(us,gs,{"series":0,"direct":0,"series_hits_moving_u0":0,"chart_unresolved":0})[:2]
+    b=_R_Rg_endpoint_safe(us,gs,{"series":0,"direct":0,"series_hits_moving_u0":0,"chart_unresolved":0})
+    c5b=a[0].str(80)==b[0].str(80) and a[1].str(80)==b[1].str(80) and all(v.is_finite() for v in b)
+    print("C1B_MOVING_U0_CONTROL","5b","PASS" if c5b else "FAIL")
+    if not c5b: raise SystemExit("C1B_MOVING_U0_CONTROL_FAIL")
+
+def endpoint_regression_controls():
+    tp=Fraction(546857674007,2**39); ll=Fraction(231,400); lr=Fraction(3697,6400); t=interval(tp,tp); L=interval(ll,lr); c4=c5=True
+    for i in (40,41,42):
+        sb=base._box(base._point(Fraction(i,4096)),base._point(Fraction(i+1,4096)))
+        st={"series":0,"direct":0,"series_hits_moving_u0":0,"chart_unresolved":0}
+        legacy=_legacy_g_density_stable(sb,t,L,st); fresh=_g_density_stable(sb,t,L,{"series":0,"direct":0,"series_hits_moving_u0":0,"chart_unresolved":0}); gl=_glam_density(sb,t,L,{"series":0,"direct":0,"series_hits_moving_u0":0,"chart_unresolved":0})
+        c4 = c4 and (not legacy.is_finite()) and fresh.is_finite(); c5 = c5 and fresh.is_finite() and gl.is_finite()
+        print("C1B_R_REGRESSION_VALUE",i,"legacy",legacy.str(50),"new_g",fresh.str(50),"new_gl",gl.str(50))
+    print("C1B_R_REGRESSION_CONTROL",4,"PASS" if c4 else "FAIL"); print("C1B_GL_REGRESSION_CONTROL",5,"PASS" if c5 else "FAIL")
+    if not (c4 and c5): raise SystemExit("C1B_R_REGRESSION_FAIL")
+    slab=Slab(102,3,Fraction(231,400),Fraction(3697,6400)); tc=Fraction(512497935639,2**39)
+    out=tube_stage(slab,tc,T_STAGES[0]); c5_t0=out[0] and len(out[10])==0
+    print("C1B_ABORT154_T0_CONTROL",5,"PASS" if c5_t0 else "FAIL")
+    if not c5_t0: raise SystemExit("C1B_ABORT154_T0_CONTROL_FAIL")
+
 def bob_preflight():
     data = BOB_RECEIPT.read_bytes()
     text = data.decode()
@@ -189,16 +301,32 @@ def bob_preflight():
 def predictor_scan(slab):
     lm = (slab.ll + slab.lr) / 2
     prev_t = T_LO
-    prev, work = g_box(prev_t, prev_t, lm, lm, PRED_SCAN_PANELS)
-    prev_mid = prev.mid()
-    for k in range(1, 513):
-        t = T_LO + Fraction(k, PRED_GRID_DEN)
-        v, c = g_box(t, t, lm, lm, PRED_SCAN_PANELS)
-        work += c
-        if prev_mid > 0 and v.mid() < 0:
-            return (prev_t, t), work
-        prev_t, prev_mid = t, v.mid()
-    return None, work
+    work = 0
+    try:
+        prev, c = g_box(prev_t, prev_t, lm, lm, PRED_SCAN_PANELS); work += c
+        if not _arb_bounds_finite(prev):
+            rec = _nonfinite_record("ARB_NONFINITE", "g_box", "PREDICTOR", "SCAN", slab.depth,
+                                    prev_t, prev_t, lm, lm)
+            print("C1B_PREDICTOR_NONFINITE", slab.coarse, slab.depth, rec)
+            return None, work, rec
+        prev_mid = prev.mid()
+        for k in range(1, 513):
+            t = T_LO + Fraction(k, PRED_GRID_DEN)
+            v, c = g_box(t, t, lm, lm, PRED_SCAN_PANELS); work += c
+            if not _arb_bounds_finite(v):
+                rec = _nonfinite_record("ARB_NONFINITE", "g_box", "PREDICTOR", "SCAN", slab.depth,
+                                        t, t, lm, lm)
+                print("C1B_PREDICTOR_NONFINITE", slab.coarse, slab.depth, rec)
+                return None, work, rec
+            if prev_mid > 0 and v.mid() < 0:
+                return (prev_t, t), work, None
+            prev_t, prev_mid = t, v.mid()
+    except REndpointDomainGuard as exc:
+        rec = _nonfinite_record("R_ENDPOINT_DOMAIN_GUARD", "g_box", "PREDICTOR", "SCAN", slab.depth,
+                                prev_t, prev_t, lm, lm, str(exc))
+        print("C1B_PREDICTOR_NONFINITE", slab.coarse, slab.depth, rec)
+        return None, work, rec
+    return None, work, None
 
 def select_predictor_candidate(continuation, bracket):
     if not isinstance(continuation, Fraction):
@@ -296,20 +424,38 @@ def mono_closure_controls():
     if not cap_ok:
         raise SystemExit("EXTERIOR_MONO_CONTROL_FAIL")
 
+def _nonfinite_record(kind, evaluator, side, stage, depth, tl, tr, ll, lr, detail=None):
+    return {"kind": kind, "evaluator": evaluator, "side": side, "stage": stage,
+            "depth": depth, "t": (tl, tr), "lambda": (ll, lr), "detail": detail}
+
+def _checked_finite(value, evaluator, side, label, slab, tl, tr, ll, lr, nonfinite):
+    if _arb_bounds_finite(value):
+        return True
+    nonfinite.append(_nonfinite_record("ARB_NONFINITE", evaluator, side, label, slab.depth,
+                                      tl, tr, ll, lr))
+    return False
+
 def tube_stage(slab, tc, stage):
     label, nt, nl, panels = stage
     tm, tp = max(T_LO, tc-W0), min(T_HI, tc+W0)
     lclamp, rclamp = tm == T_LO, tp == T_HI
     gt_bad = left_bad = right_bad = corner = cells = 0
     gt_worst = left_worst = right_worst = None
-    guards, corner_boxes = [], []
+    guards, corner_boxes, nonfinite = [], [], []
     for tl, tr in split(tm, tp, nt):
         for ll, lr in split(slab.ll, slab.lr, nl):
             try:
                 v, charts, c = gt_box(tl, tr, ll, lr, panels)
-                cells += c; ch = int(charts.get("corner_hull", 0)); corner += ch; good = v.upper() < 0
+                cells += c; ch = int(charts.get("corner_hull", 0)); corner += ch
+                finite = _checked_finite(v, "gt_box", "GT", label, slab, tl, tr, ll, lr, nonfinite)
+                good = finite and v.upper() < 0
                 if ch:
                     corner_boxes.append((tl, tr, ll, lr))
+                if not finite: v = None
+            except REndpointDomainGuard as exc:
+                nonfinite.append(_nonfinite_record("R_ENDPOINT_DOMAIN_GUARD", "gt_box", "GT", label,
+                                                  slab.depth, tl, tr, ll, lr, str(exc)))
+                v, good = None, False
             except (ValueError, ZeroDivisionError):
                 v, good = None, False
             guards.append((label, "GT", tl, tr, ll, lr, bool(good)))
@@ -318,7 +464,14 @@ def tube_stage(slab, tc, stage):
                 gt_worst = (v.upper(), tl, tr, ll, lr)
     for ll, lr in split(slab.ll, slab.lr, nl):
         try:
-            v, c = g_box(tm, tm, ll, lr, panels); cells += c; good = v.lower() > 0
+            v, c = g_box(tm, tm, ll, lr, panels); cells += c
+            finite = _checked_finite(v, "g_box", "LEFT", label, slab, tm, tm, ll, lr, nonfinite)
+            good = finite and v.lower() > 0
+            if not finite: v = None
+        except REndpointDomainGuard as exc:
+            nonfinite.append(_nonfinite_record("R_ENDPOINT_DOMAIN_GUARD", "g_box", "LEFT", label,
+                                              slab.depth, tm, tm, ll, lr, str(exc)))
+            v, good = None, False
         except (ValueError, ZeroDivisionError):
             v, good = None, False
         guards.append((label, "LEFT", tm, tm, ll, lr, bool(good)))
@@ -327,7 +480,14 @@ def tube_stage(slab, tc, stage):
             left_worst = (v.lower(), ll, lr)
         if not rclamp:
             try:
-                v, c = g_box(tp, tp, ll, lr, panels); cells += c; good = v.upper() < 0
+                v, c = g_box(tp, tp, ll, lr, panels); cells += c
+                finite = _checked_finite(v, "g_box", "RIGHT", label, slab, tp, tp, ll, lr, nonfinite)
+                good = finite and v.upper() < 0
+                if not finite: v = None
+            except REndpointDomainGuard as exc:
+                nonfinite.append(_nonfinite_record("R_ENDPOINT_DOMAIN_GUARD", "g_box", "RIGHT", label,
+                                                  slab.depth, tp, tp, ll, lr, str(exc)))
+                v, good = None, False
             except (ValueError, ZeroDivisionError):
                 v, good = None, False
             guards.append((label, "RIGHT", tp, tp, ll, lr, bool(good)))
@@ -339,24 +499,26 @@ def tube_stage(slab, tc, stage):
           "tc", tc, "walls", (tm, tp), "left_clamp", lclamp, "right_clamp", rclamp,
           "right_mode", "B_ob_receipt" if rclamp else "finite_t_wall",
           "gt_bad", gt_bad, "left_bad", left_bad, "right_bad", right_bad,
-          "corner_hull", corner,
+          "nonfinite", len(nonfinite), "corner_hull", corner,
           "gt_worst_upper", None if gt_worst is None else gt_worst[0].str(50),
           "left_worst_lower", None if left_worst is None else left_worst[0].str(50),
           "right_worst_upper", None if right_worst is None else right_worst[0].str(50))
-    return ok, tm, tp, lclamp, rclamp, corner, cells, label, guards, corner_boxes
+    for rec in nonfinite:
+        print("C1B_NONFINITE", rec)
+    return ok, tm, tp, lclamp, rclamp, corner, cells, label, guards, corner_boxes, nonfinite
 
 def tube_first_pass(slab, tc):
     total = corner = 0
-    all_guards, all_corner_boxes = [], []
+    all_guards, all_corner_boxes, all_nonfinite = [], [], []
     last = None
     for stage in T_STAGES:
         out = tube_stage(slab, tc, stage)
         last = out; total += out[6]; corner += out[5]
-        all_guards.extend(out[8]); all_corner_boxes.extend(out[9])
+        all_guards.extend(out[8]); all_corner_boxes.extend(out[9]); all_nonfinite.extend(out[10])
         if out[0]:
             print("C1B_TUBE_FIRST_PASS", slab.coarse, slab.depth, stage[0])
-            return True, out[1], out[2], out[3], out[4], corner, total, stage[0], all_guards, all_corner_boxes
-    return False, last[1], last[2], last[3], last[4], corner, total, None, all_guards, all_corner_boxes
+            return True, out[1], out[2], out[3], out[4], corner, total, stage[0], all_guards, all_corner_boxes, all_nonfinite
+    return False, last[1], last[2], last[3], last[4], corner, total, None, all_guards, all_corner_boxes, all_nonfinite
 
 def _outward_hull(values):
     if not values:
@@ -373,6 +535,7 @@ def root_localize(slab, tm, tp):
     reason = "MAX_STEPS"
     steps = []
     for step in range(1, ROOT_MV_STEPS + 1):
+        work_before = work
         if hi - lo <= ROOT_TARGET:
             reason = "TARGET_WIDTH"
             break
@@ -413,6 +576,22 @@ def root_localize(slab, tm, tp):
                     "work": ROOT_GL_PANELS,
                 })
             Gl = _outward_hull(gl_values)
+        except REndpointDomainGuard as exc:
+            reason = "MV_NONFINITE_ENCLOSURE"
+            steps.append({
+                "step": step, "T_k": T_k, "t_ref": t_ref, "lambda_c": lambda_c,
+                "G0": None if G0 is None else _arb_snapshot(G0),
+                "Gt": None if Gt is None else _arb_snapshot(Gt), "Gt_cells": gt_cells,
+                "Gl": None if Gl is None else _arb_snapshot(Gl), "Gl_cells": gl_cells,
+                "Gpar": None, "N_k": None, "T_next": None, "width": hi-lo,
+                "division_guard": False, "empty_intersection": False,
+                "gt_charts": dict(gt_charts), "gl_stats": dict(gl_stats),
+                "nonfinite": {"kind": "R_ENDPOINT_DOMAIN_GUARD", "detail": str(exc)},
+                "step_work": work-work_before,
+            })
+            print("C1B_ROOT_NONFINITE", slab.coarse, slab.depth, step, "kind",
+                  "R_ENDPOINT_DOMAIN_GUARD", "detail", str(exc))
+            break
         except (ValueError, ZeroDivisionError):
             reason = "MV_EVAL_UNRESOLVED"
             break
@@ -545,13 +724,20 @@ def mono_closure_box(box, tm, tp, panels):
     closed = _mono_truth(box.side, gt.upper(), wall.lower(), wall.upper())
     return closed, gt, wall
 
-def eval_exterior(boxes, panels, label, tm, tp, mono_work):
+def eval_exterior(boxes, panels, label, tm, tp, mono_work, depth):
     unresolved, resolved, work, worstL, worstR = [], [], 0, None, None
-    sign_guards, mono_guards = [], []
+    sign_guards, mono_guards, nonfinite = [], [], []
     for box in boxes:
         try:
             value, c = g_box(box.tl, box.tr, box.ll, box.lr, panels); work += c
-            good = value.lower() > 0 if box.side == "L" else value.upper() < 0
+            finite = _checked_finite(value, "g_box", box.side, label, type("S", (), {"depth": depth})(),
+                                     box.tl, box.tr, box.ll, box.lr, nonfinite)
+            good = finite and (value.lower() > 0 if box.side == "L" else value.upper() < 0)
+            if not finite: value = None
+        except REndpointDomainGuard as exc:
+            nonfinite.append(_nonfinite_record("R_ENDPOINT_DOMAIN_GUARD", "g_box", box.side, label,
+                                              depth, box.tl, box.tr, box.ll, box.lr, str(exc)))
+            value, good = None, False
         except (ValueError, ZeroDivisionError):
             value, good = None, False
         sign_guards.append((label, box.side, box.tl, box.tr, box.ll, box.lr, bool(good)))
@@ -568,71 +754,74 @@ def eval_exterior(boxes, panels, label, tm, tp, mono_work):
     ordered = sorted(unresolved, key=lambda b: ((tm - b.tr) if b.side == "L" else (b.tl - tp), b.ll, b.tl))
     for box in ordered:
         if not _mono_cap_allows(mono_work, panels):
-            mono_skipped += 1
-            still_unresolved.append(box)
-            continue
-        mono_attempted += 1
-        mono_work += 2 * panels
-        stage_mono_work += 2 * panels
-        work += 2 * panels
+            mono_skipped += 1; still_unresolved.append(box); continue
+        mono_attempted += 1; mono_work += 2 * panels; stage_mono_work += 2 * panels; work += 2 * panels
         try:
             closed, gt, wall = mono_closure_box(box, tm, tp, panels)
+            finite_gt = _arb_bounds_finite(gt); finite_wall = _arb_bounds_finite(wall)
+            if not finite_gt:
+                nonfinite.append(_nonfinite_record("ARB_NONFINITE", "gt_box", box.side+"_MONO", label,
+                                                  depth, box.tl, box.tr, box.ll, box.lr))
+            if not finite_wall:
+                nonfinite.append(_nonfinite_record("ARB_NONFINITE", "g_box", box.side+"_MONO", label,
+                                                  depth, box.tl, box.tr, box.ll, box.lr))
+            if not (finite_gt and finite_wall): closed, gt, wall = False, None, None
+        except REndpointDomainGuard as exc:
+            nonfinite.append(_nonfinite_record("R_ENDPOINT_DOMAIN_GUARD", "mono_closure_box", box.side+"_MONO",
+                                              label, depth, box.tl, box.tr, box.ll, box.lr, str(exc)))
+            closed, gt, wall = False, None, None
         except (ValueError, ZeroDivisionError):
             closed, gt, wall = False, None, None
         mono_guards.append((label, box.side + "_MONO", box.tl, box.tr, box.ll, box.lr, bool(closed)))
-        if gt is not None and (worst_gt is None or gt.upper() > worst_gt):
-            worst_gt = gt.upper()
+        if gt is not None and (worst_gt is None or gt.upper() > worst_gt): worst_gt = gt.upper()
         if wall is not None:
             wall_bound = wall.lower() if box.side == "L" else wall.upper()
             wall_margin = wall_bound if box.side == "L" else -wall_bound
-            if worst_wall is None or wall_margin < worst_wall[0]:
-                worst_wall = (wall_margin, wall_bound)
-        if closed:
-            mono_closed += 1
-            resolved.append(box)
-        else:
-            still_unresolved.append(box)
-    mono_stats = {
-        "attempted": mono_attempted, "closed": mono_closed, "skipped_cap": mono_skipped,
-        "work": stage_mono_work, "worst_gt_upper": worst_gt,
-        "worst_wall": None if worst_wall is None else worst_wall[1],
-    }
-    return still_unresolved, resolved, work, worstL, worstR, sign_guards + mono_guards, mono_work, mono_stats
+            if worst_wall is None or wall_margin < worst_wall[0]: worst_wall = (wall_margin, wall_bound)
+        if closed: mono_closed += 1; resolved.append(box)
+        else: still_unresolved.append(box)
+    mono_stats = {"attempted": mono_attempted, "closed": mono_closed, "skipped_cap": mono_skipped,
+                  "work": stage_mono_work, "worst_gt_upper": worst_gt,
+                  "worst_wall": None if worst_wall is None else worst_wall[1]}
+    return still_unresolved, resolved, work, worstL, worstR, sign_guards + mono_guards, mono_work, mono_stats, nonfinite
 
 def exterior_cover(slab, tm, tp):
     current = exterior_seed(slab, tm, tp)
     terminal, work, mono_work = 0, 0, 0
-    all_guards = []
+    all_guards, all_nonfinite = [], []
     if not current:
         print("C1B_EXTERIOR", slab.coarse, slab.depth, "EMPTY_REMAINDER", "PASS")
-        return True, work, all_guards
+        return True, work, all_guards, all_nonfinite
     for idx, (label, panels) in enumerate(E_STAGES):
-        unresolved, resolved, w, worstL, worstR, guards, mono_work, mono = eval_exterior(
-            current, panels, label, tm, tp, mono_work)
-        all_guards.extend(guards)
+        unresolved, resolved, w, worstL, worstR, guards, mono_work, mono, nonfinite = eval_exterior(
+            current, panels, label, tm, tp, mono_work, slab.depth)
+        all_guards.extend(guards); all_nonfinite.extend(nonfinite)
         work += w; terminal += len(resolved)
         live_terminal = terminal + len(unresolved)
         print("C1B_EXTERIOR_STAGE", slab.coarse, slab.depth, label,
               "input", len(current), "resolved_now", len(resolved), "unresolved", len(unresolved),
               "live_terminal", live_terminal,
               "worst_left_lower", None if worstL is None else worstL.str(50),
-              "worst_right_upper", None if worstR is None else worstR.str(50))
+              "worst_right_upper", None if worstR is None else worstR.str(50),
+              "nonfinite", len(nonfinite))
+        for rec in nonfinite:
+            print("C1B_NONFINITE", rec)
         print("C1B_EXTERIOR_MONO", slab.coarse, slab.depth, label,
               "attempted", mono["attempted"], "closed", mono["closed"],
               "skipped_cap", mono["skipped_cap"], "work", mono["work"],
               "worst_gt_upper", None if mono["worst_gt_upper"] is None else mono["worst_gt_upper"].str(50),
               "worst_wall", None if mono["worst_wall"] is None else mono["worst_wall"].str(50))
         if live_terminal > E_BOX_CAP:
-            return False, work, all_guards
+            return False, work, all_guards, all_nonfinite
         if not unresolved:
             print("C1B_EXTERIOR_FIRST_PASS", slab.coarse, slab.depth, label)
-            return True, work, all_guards
+            return True, work, all_guards, all_nonfinite
         if idx == len(E_STAGES)-1:
-            return False, work, all_guards
+            return False, work, all_guards, all_nonfinite
         current = [c for box in unresolved for c in e_children(box)]
         if terminal + len(current) > E_BOX_CAP:
-            return False, work, all_guards
-    return False, work, all_guards
+            return False, work, all_guards, all_nonfinite
+    return False, work, all_guards, all_nonfinite
 
 def exact_middle_partition(tm, tp):
     pieces = []
@@ -644,18 +833,25 @@ def exact_middle_partition(tm, tp):
          and all(x[2] == y[1] for x,y in zip(nonempty, nonempty[1:]))
     return ok, nonempty
 
+def _tube_failure_reason(nonfinite):
+    return "TUBE_NONFINITE" if nonfinite else "TUBE"
+
+def _exterior_failure_reason(nonfinite):
+    return "EXTERIOR_NONFINITE" if nonfinite else "EXTERIOR"
+
 def _attempt_with_tc(slab, tc, mode, predictor_work):
     work = {"predictor":predictor_work, "tube":0, "root":0, "exterior":0}
     if tc is None:
         return False, None, None, None, work, "PREDICTOR"
-    tok, tm, tp, lc, rc, corner, w, tstage, tube_guards, corner_boxes = tube_first_pass(slab, tc); work["tube"] += w
+    tok, tm, tp, lc, rc, corner, w, tstage, tube_guards, corner_boxes, tube_nonfinite = tube_first_pass(slab, tc); work["tube"] += w
     base_rec = {"slab":slab, "tc":tc, "mode":mode, "root":None, "sup_error":None,
                 "tm":tm, "tp":tp, "left_clamp":lc, "right_clamp":rc,
                 "corner_hull":corner, "corner_boxes":corner_boxes, "tube_stage":tstage,
-                "tube_guards":tube_guards, "exterior_guards":[], "pieces":[],
+                "tube_guards":tube_guards, "tube_nonfinite":tube_nonfinite, "exterior_guards":[],
+                "exterior_nonfinite":[], "pieces":[],
                 "root_steps":[], "root_reason":None}
     if not tok:
-        return False, base_rec, None, tc, work, "TUBE"
+        return False, base_rec, None, tc, work, _tube_failure_reason(tube_nonfinite)
     rok, root, w, root_steps, root_reason = root_localize(slab, tm, tp); work["root"] += w
     base_rec.update({"root":root, "root_steps":root_steps, "root_reason":root_reason})
     if not rok:
@@ -664,10 +860,10 @@ def _attempt_with_tc(slab, tc, mode, predictor_work):
     base_rec["sup_error"] = err
     if not aok:
         return False, base_rec, root, tc, work, "PREDICTOR_ACCEPT"
-    eok, w, exterior_guards = exterior_cover(slab, tm, tp); work["exterior"] += w
-    base_rec["exterior_guards"] = exterior_guards
+    eok, w, exterior_guards, exterior_nonfinite = exterior_cover(slab, tm, tp); work["exterior"] += w
+    base_rec["exterior_guards"] = exterior_guards; base_rec["exterior_nonfinite"] = exterior_nonfinite
     if not eok:
-        return False, base_rec, root, tc, work, "EXTERIOR"
+        return False, base_rec, root, tc, work, _exterior_failure_reason(exterior_nonfinite)
     pok, pieces = exact_middle_partition(tm, tp)
     print("C1B_MIDDLE_T_PARTITION", "PASS" if pok else "FAIL", slab.coarse, slab.depth, pieces)
     base_rec["pieces"] = pieces
@@ -678,7 +874,11 @@ def _attempt_with_tc(slab, tc, mode, predictor_work):
 def attempt_replay(slab, previous_root, expected_tc):
     # The producer-selected exact A.1 t_c is fixed replay input. Checker still
     # executes its own bracket scan for work/proof diagnostics, but cannot alter t_c.
-    bracket, predictor_work = predictor_scan(slab)
+    bracket, predictor_work, predictor_nonfinite = predictor_scan(slab)
+    if predictor_nonfinite is not None:
+        work = {"predictor": predictor_work, "tube": 0, "root": 0, "exterior": 0}
+        rec = {"mode": None, "predictor_only": True, "predictor_nonfinite": [predictor_nonfinite]}
+        return False, rec, None, expected_tc, work, "PREDICTOR_NONFINITE"
     if expected_tc is None:
         return _attempt_with_tc(slab, None, None, predictor_work)
     if not isinstance(expected_tc, Fraction):
@@ -687,6 +887,75 @@ def attempt_replay(slab, previous_root, expected_tc):
     print("C1B_PREDICTOR_REPLAY", slab.coarse, slab.depth, slab.ll, slab.lr,
           "P1", bracket, "fixed_t_c", expected_tc, "scan_cells", predictor_work)
     return _attempt_with_tc(slab, expected_tc, mode, predictor_work)
+
+def diagnostic_controls():
+    global g_box, gt_box, mono_closure_box
+    slab=Slab(0,0,L_LO,L_LO+DLAM); tc=Fraction(9,16)
+    saved_g, saved_gt, saved_mono = g_box, gt_box, mono_closure_box
+    def guard(*args, **kwargs): raise REndpointDomainGuard("R_ENDPOINT_DOMAIN_GUARD")
+    def unrelated(*args, **kwargs): raise RuntimeError("C1B_C6_UNRELATED")
+    def gt_ok(*args, **kwargs): return arb(-1), {}, 1
+    def g_zero(*args, **kwargs): return arb(0), 1
+    results=[]
+    try:
+        # tube
+        gt_box=gt_ok; g_box=guard
+        out=tube_stage(slab,tc,("C6T",1,1,1)); caught=any(r["kind"]=="R_ENDPOINT_DOMAIN_GUARD" for r in out[10])
+        g_box=unrelated; propagated=False
+        try: tube_stage(slab,tc,("C6T",1,1,1))
+        except RuntimeError as exc: propagated=(str(exc)=="C1B_C6_UNRELATED")
+        results.append(("tube",caught and propagated))
+        # exterior sign
+        box=EBox("L",T_LO,tc,L_LO,L_LO+DLAM); g_box=guard
+        out=eval_exterior([box],1,"C6E",tc,tc+W0,MONO_WORK_CAP,0); caught=any(r["kind"]=="R_ENDPOINT_DOMAIN_GUARD" for r in out[8])
+        g_box=unrelated; propagated=False
+        try: eval_exterior([box],1,"C6E",tc,tc+W0,MONO_WORK_CAP,0)
+        except RuntimeError as exc: propagated=(str(exc)=="C1B_C6_UNRELATED")
+        results.append(("exterior_sign",caught and propagated))
+        # exterior MONO
+        g_box=g_zero; mono_closure_box=guard
+        out=eval_exterior([box],1,"C6M",tc,tc+W0,0,0); caught=any(r["kind"]=="R_ENDPOINT_DOMAIN_GUARD" for r in out[8])
+        mono_closure_box=unrelated; propagated=False
+        try: eval_exterior([box],1,"C6M",tc,tc+W0,0,0)
+        except RuntimeError as exc: propagated=(str(exc)=="C1B_C6_UNRELATED")
+        results.append(("exterior_mono",caught and propagated))
+        # root g/Gl boundary
+        mono_closure_box=saved_mono; g_box=guard; gt_box=saved_gt
+        rok,root,work,steps,reason=root_localize(slab,T_LO,tc); caught=(not rok and reason=="MV_NONFINITE_ENCLOSURE" and steps and steps[-1].get("nonfinite",{}).get("kind")=="R_ENDPOINT_DOMAIN_GUARD")
+        g_box=unrelated; propagated=False
+        try: root_localize(slab,T_LO,tc)
+        except RuntimeError as exc: propagated=(str(exc)=="C1B_C6_UNRELATED")
+        results.append(("root",caught and propagated))
+        # predictor
+        g_box=guard; pout=attempt_replay(slab,None,tc)
+        prec=pout[1]; caught=(pout[5]=="PREDICTOR_NONFINITE" and prec is not None and
+                              prec.get("predictor_nonfinite", [{}])[0].get("kind")=="R_ENDPOINT_DOMAIN_GUARD")
+        g_box=unrelated; propagated=False
+        try: predictor_scan(slab)
+        except RuntimeError as exc: propagated=(str(exc)=="C1B_C6_UNRELATED")
+        results.append(("predictor",caught and propagated))
+        # plain Arb non-finite values map to the dedicated terminal-reason classes.
+        gt_box=gt_ok
+        def g_nan(*args, **kwargs): return arb("nan"), 1
+        g_box=g_nan
+        tout=tube_stage(slab,tc,("C6N",1,1,1))
+        box=EBox("L",T_LO,tc,L_LO,L_LO+DLAM)
+        eout=eval_exterior([box],1,"C6N",tc,tc+W0,MONO_WORK_CAP,0)
+        plain=(bool(tout[10]) and _tube_failure_reason(tout[10])=="TUBE_NONFINITE" and
+               bool(eout[8]) and _exterior_failure_reason(eout[8])=="EXTERIOR_NONFINITE")
+        results.append(("plain_nonfinite_reasons",plain))
+    finally:
+        g_box, gt_box, mono_closure_box = saved_g, saved_gt, saved_mono
+    for label,ok in results: print("C1B_NONFINITE_DIAGNOSTIC_CONTROL",label,"PASS" if ok else "FAIL")
+    if len(results)!=6 or not all(ok for _,ok in results): raise SystemExit("C1B_NONFINITE_DIAGNOSTIC_CONTROL_FAIL")
+
+def empty_remainder_control():
+    slab=Slab(0,0,L_LO,L_LO+DLAM)
+    # Force exterior_seed to be empty by making the tube cover the full middle domain.
+    out=exterior_cover(slab,T_LO,T_MID_HI)
+    ok=(len(out)==4 and out[0] is True and out[1]==0 and out[2]==[] and out[3]==[])
+    print("C1B_EMPTY_REMAINDER_CONTROL","PASS" if ok else "FAIL","arity",len(out),"value",out)
+    if not ok: raise SystemExit("C1B_EMPTY_REMAINDER_CONTROL_FAIL")
 
 def preflight():
     ok = (L_LO < L_HI and DLAM > 0 and N_COARSE == 140 and MAX_DEPTH == 3)
@@ -708,6 +977,12 @@ def preflight():
           "max_depth", MAX_DEPTH)
     print("WORK_CEILINGS", ATTEMPT_WORK_CEILING, ACCEPTED_WORK_CEILING, GLOBAL_ATTEMPT_WORK_CEILING)
     if not ok: raise SystemExit("PREFLIGHT_FAIL")
+    numeric_import_closure_preflight()
+    numeric_import_closure_controls()
+    endpoint_light_controls()
+    endpoint_regression_controls()
+    diagnostic_controls()
+    empty_remainder_control()
     predictor_selection_controls()
     root_nonfinite_controls()
     mono_closure_controls()
