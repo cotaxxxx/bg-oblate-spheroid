@@ -414,6 +414,50 @@ def v28_preflight_controls():
     if not (c81 and c82 and c83): raise SystemExit("C1B_V281_FAIL")
 
 
+def v282_preflight_controls():
+    import inspect
+    src_glam = inspect.getsource(_glam_density)
+    c1 = ('q = _positive_q_box(mu, t, lam, q_raw)' in src_glam and
+          'sq = q.sqrt()' in src_glam and
+          'gamma = lam * A / (w * sq)' in src_glam and
+          'h = mu + l2 * d' in src_glam and
+          'u = base._unit_nonnegative(e * h * h / (w2 * q))' in src_glam and
+          '_gamma' in src_glam and '_u' in src_glam and '_sq' in src_glam and
+          src_glam.count('inv_wq32 = _positive_inv_wq32') == 1 and
+          'L = lam * inv_wq32' in src_glam and
+          'regular_rg_term = -(gamma * R - 1) * gamma * e * k * inv_wq32' in src_glam)
+    helper_src = inspect.getsource(_positive_q_box)
+    helper_shape = ('t0 = t_lo if mu0 < t_lo else t_hi if mu0 > t_hi else mu0' in helper_src and
+                    'q_lo = min(q_endpoint(mu_lo), q_endpoint(mu_hi))' in helper_src and
+                    'd2' not in helper_src and 'd_lo' not in helper_src and 'd_hi' not in helper_src)
+    print("C1B_V282_C1_DERIVED_Q_RECONSTRUCTION", "PASS" if c1 else "FAIL")
+    if not c1: raise SystemExit("C1B_V282_C1_FAIL")
+
+    mu_lo, mu_hi = Fraction(1,2), Fraction(3,4)
+    t_lo, t_hi = Fraction(3,5), Fraction(7,10)
+    lam_lo, lam_hi = Fraction(1,2), Fraction(9,16)
+    exact_qmin = _q_box_min_fraction(mu_lo, mu_hi, t_lo, t_hi, lam_lo)
+    mu_box = interval(mu_lo, mu_hi); t_box = interval(t_lo, t_hi); lam_box = interval(lam_lo, lam_hi)
+    d_lo, d_hi = t_lo - mu_hi, t_hi - mu_lo
+    true_d2_lower = Fraction(0)
+    invalid_endpoint_square = min(d_lo*d_lo, d_hi*d_hi)
+    q_raw = base._box(base._point(Fraction(0)), base._point(Fraction(2)))
+    q_impl = _positive_q_box(mu_box, t_box, lam_box, q_raw)
+    impl_lo = _arb_exact_fraction(q_impl.lower())
+    outward_ok = 0 < impl_lo <= exact_qmin
+    zero_cross_ok = d_lo < 0 < d_hi and true_d2_lower == 0 and invalid_endpoint_square > 0
+    c2 = outward_ok and zero_cross_ok and helper_shape
+    gap = exact_qmin - impl_lo
+    rel_gap = None if exact_qmin == 0 else gap / exact_qmin
+    print("C1B_V282_C2_ZERO_CROSS", "PASS" if c2 else "FAIL",
+          "exact_qmin", exact_qmin, "impl_lower", impl_lo,
+          "gap", gap, "relative_gap", rel_gap,
+          "d", (d_lo, d_hi), "true_d2_lower", true_d2_lower,
+          "invalid_endpoint_square", invalid_endpoint_square,
+          "helper_shape", helper_shape)
+    if not c2: raise SystemExit("C1B_V282_C2_FAIL")
+
+
 def endpoint_regression_controls():
     tp=Fraction(546857674007,2**39); ll=Fraction(231,400); lr=Fraction(3697,6400); t=interval(tp,tp); L=interval(ll,lr); c4=c5=True
     for i in (40,41,42):
@@ -1137,6 +1181,7 @@ def preflight():
     endpoint_light_controls()
     endpoint_regression_controls()
     v28_preflight_controls()
+    v282_preflight_controls()
     diagnostic_controls()
     empty_remainder_control()
     predictor_selection_controls()
