@@ -37,6 +37,8 @@ ROOT_MV_STEPS = 8
 ROOT_G_PANELS, ROOT_GT_PANELS, ROOT_GL_PANELS = 32768, 8192, 8192
 ROOT_GT_T_CELLS = 16
 ROOT_GL_T_CELLS = 16
+ROOT_GT_REFINE_DEPTH = 2
+T2_ENDPOINT_REFINE_DEPTH = 4
 E0_TBOXES, E0_LBOXES = 24, 8
 E_STAGES = (("E0", 1024), ("E1", 2048), ("E2", 4096))
 E_BOX_CAP = 4096
@@ -458,6 +460,160 @@ def v282_preflight_controls():
     if not c2: raise SystemExit("C1B_V282_C2_FAIL")
 
 
+def _root_gt_min_q_lower(tl, tr, ll, lr, panels):
+    grid, root = base._partition(panels)
+    t, lam = interval(tl, tr), interval(ll, lr)
+    minimum = None
+    for a, b in zip(grid, grid[1:]):
+        aa = root if a == base.SQRT2 else base._point(a)
+        bb = root if b == base.SQRT2 else base._point(b)
+        geo = grouped._geometry(base._box(aa, bb), t, lam)
+        mu, q_raw = geo[2], geo[10]
+        q = _positive_q_box(mu, t, lam, q_raw)
+        qlo = q.lower()
+        minimum = qlo if minimum is None or qlo < minimum else minimum
+    return minimum
+
+
+def v29_preflight_controls():
+    global g_box, gt_box, glam_box
+    slab = Slab(105, 1, Fraction(93,160), Fraction(931,1600))
+    a = Fraction(545276670493,549755813888); b = Fraction(549571637789,549755813888)
+    m = Fraction(547424154141,549755813888)
+    children = ((a,m),(m,b))
+    signs = []; qmins = []
+    for lo, hi in children:
+        value, _, _ = gt_box(lo, hi, slab.ll, slab.lr, ROOT_GT_PANELS)
+        qlo = _root_gt_min_q_lower(lo, hi, slab.ll, slab.lr, ROOT_GT_PANELS)
+        signs.append(bool(value.upper() < 0)); qmins.append(qlo)
+    c1 = all(signs) and all(q > 0 for q in qmins)
+    print("C1B_V29_C1", "PASS" if c1 else "FAIL", "qmins", [q.str(40) for q in qmins])
+    if not c1: raise SystemExit("C1B_V29_C1_FAIL")
+
+    saved_g, saved_gt, saved_glam = g_box, gt_box, glam_box
+    try:
+        calls = []
+        def synthetic_g(tl,tr,ll,lr,panels):
+            return arb(0), panels
+        def synthetic_glam(tl,tr,ll,lr,panels):
+            return arb(0), {}, panels
+        def synthetic_pass(tl,tr,ll,lr,panels):
+            calls.append((tl,tr)); return arb(-1), {}, panels
+        g_box, gt_box, glam_box = synthetic_g, synthetic_pass, synthetic_glam
+        rok, _, root_work, steps, _ = root_localize(slab, Fraction(1,2), Fraction(3,4))
+        baseline = ROOT_G_PANELS + ROOT_GT_T_CELLS*ROOT_GT_PANELS + ROOT_GL_T_CELLS*ROOT_GL_PANELS
+        c2 = (rok and len(calls) == ROOT_GT_T_CELLS and steps and
+              steps[0].get("Gt_refinement") == [] and steps[0]["step_work"] == baseline and
+              root_work == baseline)
+        print("C1B_V29_C2", "PASS" if c2 else "FAIL")
+        if not c2: raise SystemExit("C1B_V29_C2_FAIL")
+
+        calls.clear()
+        def synthetic_fail(tl,tr,ll,lr,panels):
+            calls.append((tl,tr)); return arb(1), {}, panels
+        gt_box = synthetic_fail
+        rok3, _, work3, steps3, reason3 = root_localize(slab, Fraction(1,2), Fraction(3,4))
+        refs = [ref for step in steps3 for ref in step.get("Gt_refinement", [])]
+        levels = [level["level"] for ref in refs for level in ref.get("levels", [])]
+        leaves = [child for ref in refs for level in ref.get("levels", []) if level["level"] == ROOT_GT_REFINE_DEPTH
+                  for child in level.get("children", [])]
+        c3 = (not rok3 and reason3 == "GT_DIVISION_GUARD_UNRESOLVED" and refs and
+              levels and max(levels) == ROOT_GT_REFINE_DEPTH and
+              all(level <= ROOT_GT_REFINE_DEPTH for level in levels) and
+              any(child["guard"] is False for child in leaves))
+        print("C1B_V29_C3", "PASS" if c3 else "FAIL", "reason", reason3,
+              "max_level", None if not levels else max(levels), "calls", len(calls), "work", work3)
+        if not c3: raise SystemExit("C1B_V29_C3_FAIL")
+
+        calls.clear()
+        terminals, trace, work, _, recovered = _refine_failed_root_gt_cell(slab, 15, a, b)
+        expected_l1 = [(a,(a+b)/2),((a+b)/2,b)]
+        q1 = (a + (a+b)/2) / 2; q3 = ((a+b)/2 + b) / 2
+        expected_l2 = [(a,q1),(q1,(a+b)/2),((a+b)/2,q3),(q3,b)]
+        got_l1 = [child["t_cell"] for child in trace["levels"][0]["children"]]
+        got_l2 = [child["t_cell"] for child in trace["levels"][1]["children"]]
+        c4 = (not recovered and work == 6 * ROOT_GT_PANELS and
+              [x["level"] for x in trace["levels"]] == [1,2] and
+              got_l1 == expected_l1 and got_l2 == expected_l2 and len(calls) == 6 and
+              all(child["work"] == ROOT_GT_PANELS and child["guard"] is False and
+                  set(child["Gt"]) == {"mid","rad","lower","upper"}
+                  for level in trace["levels"] for child in level["children"]))
+        print("C1B_V29_C4", "PASS" if c4 else "FAIL")
+        if not c4: raise SystemExit("C1B_V29_C4_FAIL")
+    finally:
+        g_box, gt_box, glam_box = saved_g, saved_gt, saved_glam
+
+def v210_preflight_controls():
+    global g_box, gt_box
+    slab = Slab(115, 3, Fraction(19,32), Fraction(3801,6400))
+    parent = (Fraction(65301,65536), Fraction(1))
+    lambda_cells = split(slab.ll, slab.lr, 16)
+    passing = [(ll,lr,arb(-1),True,True) for ll,lr in lambda_cells]
+    one_sign_fail = list(passing); one_sign_fail[-1] = (one_sign_fail[-1][0], one_sign_fail[-1][1], arb(1), True, False)
+    one_nonfinite = list(passing); one_nonfinite[-1] = (one_nonfinite[-1][0], one_nonfinite[-1][1], None, False, False)
+    c0 = (
+        not _t2_endpoint_activation("T0", T_HI, one_sign_fail) and
+        not _t2_endpoint_activation("T1", T_HI, one_sign_fail) and
+        not _t2_endpoint_activation("T2", T_HI-Fraction(1,65536), one_sign_fail) and
+        not _t2_endpoint_activation("T2", T_HI, passing) and
+        _t2_endpoint_activation("T2", T_HI, one_sign_fail) and
+        not _t2_endpoint_activation("T2", T_HI, one_nonfinite)
+    )
+    print("C1B_V210_C2_C3_ACTIVATION", "PASS" if c0 else "FAIL")
+    if not c0: raise SystemExit("C1B_V210_ACTIVATION_FAIL")
+
+    recovered, trace, work, _, _, nonfinite, fail_kind = _t2_endpoint_refine(
+        slab, parent, lambda_cells, 8192)
+    levels = trace["levels"]
+    c1 = (recovered and not nonfinite and trace["closed_depth"] is not None and
+          trace["closed_depth"] <= 4 and levels[0]["children"][0]["all_guard"] and
+          not levels[0]["children"][1]["all_guard"] and len(levels) >= 2 and
+          levels[1]["children"][0]["all_guard"])
+    c2 = all(len(child["subcells"]) == 16 for level in levels for child in level["children"])
+    c3 = work == sum(cell["work"] for level in levels for child in level["children"] for cell in child["subcells"])
+    print("C1B_V210_C4_LINEAGE", "PASS" if c1 else "FAIL", "closed_depth", trace["closed_depth"])
+    print("C1B_V210_C6_TRACE", "PASS" if c2 else "FAIL")
+    print("C1B_V210_WORK", "PASS" if c3 else "FAIL", "work", work)
+    if not (c1 and c2 and c3): raise SystemExit("C1B_V210_LINEAGE_FAIL")
+
+    saved_g, saved_gt = g_box, gt_box
+    try:
+        def synthetic_wall(tl,tr,ll,lr,panels):
+            return arb(1), panels
+        def depth4_terminal_fail(tl,tr,ll,lr,panels):
+            if panels != 8192:
+                return arb(1), {}, panels
+            return (arb(1) if tr == T_HI else arb(-1)), {}, panels
+        g_box, gt_box = synthetic_wall, depth4_terminal_fail
+        ok5, rec5, _, _, work5, reason5 = _attempt_with_tc(
+            slab, Fraction(15,16), "v210_c5_control", 0)
+        refs5 = [] if rec5 is None else rec5.get("tube_refinement", [])
+        depth5 = max((level["level"] for ref in refs5 for level in ref.get("levels", [])), default=0)
+        c5 = (not ok5 and reason5 == "TUBE" and rec5 is not None and
+              not rec5.get("tube_nonfinite") and refs5 and depth5 == T2_ENDPOINT_REFINE_DEPTH and
+              all(ref.get("closed_depth") is None for ref in refs5) and
+              work5["root"] == 0 and work5["exterior"] == 0)
+        print("C1B_V210_C5_DEPTH4_END_TO_END", "PASS" if c5 else "FAIL",
+              "reason", reason5, "max_depth", depth5, "tube_work", work5["tube"])
+        if not c5: raise SystemExit("C1B_V210_C5_FAIL")
+
+        parent_width = parent[1] - parent[0]
+        def progressing_nonfinite(tl,tr,ll,lr,panels):
+            if tr != T_HI:
+                return arb(-1), {}, panels
+            if tr - tl == parent_width / 2:
+                return arb(1), {}, panels
+            return arb("nan"), {}, panels
+        gt_box = progressing_nonfinite
+        recovered3, trace3, work3, _, _, nf3, fail3 = _t2_endpoint_refine(
+            slab, parent, lambda_cells, 7)
+        c6 = (not recovered3 and bool(nf3) and fail3 == "nonfinite" and
+              len(trace3["levels"]) == 2 and work3 > 0)
+        print("C1B_V210_NONFINITE_MID_REFINEMENT", "PASS" if c6 else "FAIL")
+        if not c6: raise SystemExit("C1B_V210_NONFINITE_MID_FAIL")
+    finally:
+        g_box, gt_box = saved_g, saved_gt
+
 def endpoint_regression_controls():
     tp=Fraction(546857674007,2**39); ll=Fraction(231,400); lr=Fraction(3697,6400); t=interval(tp,tp); L=interval(ll,lr); c4=c5=True
     for i in (40,41,42):
@@ -644,34 +800,117 @@ def _checked_finite(value, evaluator, side, label, depth, tl, tr, ll, lr, nonfin
                                       tl, tr, ll, lr))
     return False
 
+def _tube_gt_eval(slab, label, tl, tr, ll, lr, panels, nonfinite, charge_on_failure=False):
+    try:
+        value, charts, work = gt_box(tl, tr, ll, lr, panels)
+        finite = _checked_finite(value, "gt_box", "GT", label, slab.depth,
+                                 tl, tr, ll, lr, nonfinite)
+        return value if finite else None, dict(charts), work, bool(finite and value.upper() < 0)
+    except REndpointDomainGuard as exc:
+        nonfinite.append(_nonfinite_record("R_ENDPOINT_DOMAIN_GUARD", "gt_box", "GT", label,
+                                          slab.depth, tl, tr, ll, lr, str(exc)))
+        return None, {}, panels if charge_on_failure else 0, False
+    except (ValueError, ZeroDivisionError):
+        return None, {}, panels if charge_on_failure else 0, False
+
+
+def _t2_endpoint_activation(label, tr, strip_results):
+    if label != "T2" or tr != T_HI:
+        return False
+    all_finite = all(item[3] for item in strip_results)
+    all_guard = all(item[4] for item in strip_results)
+    return bool(all_finite and not all_guard)
+
+
+def _t2_endpoint_refine(slab, parent_t, lambda_cells, panels):
+    pa, pb = parent_t
+    trace = {"parent_t_cell": parent_t, "levels": [], "closed_depth": None}
+    added_work = added_corner = 0
+    added_corner_boxes, added_nonfinite = [], []
+    endpoint = (pa, pb)
+    for level in range(1, T2_ENDPOINT_REFINE_DEPTH + 1):
+        a, b = endpoint
+        m = (a + b) / 2
+        level_children = []
+        endpoint_next = None
+        for role, (tl, tr) in (("non_endpoint", (a, m)), ("endpoint", (m, b))):
+            subcells = []
+            child_all_finite = True
+            child_all_guard = True
+            for ll, lr in lambda_cells:
+                before_nf = len(added_nonfinite)
+                value, charts, work, guard = _tube_gt_eval(
+                    slab, "T2", tl, tr, ll, lr, panels, added_nonfinite, charge_on_failure=True)
+                added_work += work
+                ch = int(charts.get("corner_hull", 0)); added_corner += ch
+                if ch:
+                    added_corner_boxes.append((tl, tr, ll, lr))
+                finite = value is not None and len(added_nonfinite) == before_nf
+                upper = None if value is None else value.upper().str(50)
+                subcells.append({
+                    "t_cell": (tl, tr), "lambda_cell": (ll, lr),
+                    "finite": bool(finite), "Gt_upper": upper,
+                    "guard": bool(finite and guard), "work": int(work),
+                })
+                child_all_finite = child_all_finite and finite
+                child_all_guard = child_all_guard and finite and guard
+            child = {
+                "role": role, "t_cell": (tl, tr), "subcells": subcells,
+                "all_finite": bool(child_all_finite),
+                "all_guard": bool(child_all_guard),
+            }
+            level_children.append(child)
+            if not child_all_finite:
+                trace["levels"].append({"level": level, "children": level_children})
+                return False, trace, added_work, added_corner, added_corner_boxes, added_nonfinite, "nonfinite"
+            if role == "non_endpoint" and not child_all_guard:
+                trace["levels"].append({"level": level, "children": level_children})
+                return False, trace, added_work, added_corner, added_corner_boxes, added_nonfinite, "sign"
+            if role == "endpoint":
+                if child_all_guard:
+                    trace["closed_depth"] = level
+                else:
+                    endpoint_next = (tl, tr)
+        trace["levels"].append({"level": level, "children": level_children})
+        if trace["closed_depth"] is not None:
+            return True, trace, added_work, added_corner, added_corner_boxes, added_nonfinite, None
+        if level == T2_ENDPOINT_REFINE_DEPTH:
+            return False, trace, added_work, added_corner, added_corner_boxes, added_nonfinite, "sign"
+        endpoint = endpoint_next
+    raise RuntimeError("T2_ENDPOINT_REFINEMENT_UNREACHABLE")
+
 def tube_stage(slab, tc, stage):
     label, nt, nl, panels = stage
     tm, tp = max(T_LO, tc-W0), min(T_HI, tc+W0)
     lclamp, rclamp = tm == T_LO, tp == T_HI
     gt_bad = left_bad = right_bad = corner = cells = 0
     gt_worst = left_worst = right_worst = None
-    guards, corner_boxes, nonfinite = [], [], []
+    guards, corner_boxes, nonfinite, endpoint_refinement = [], [], [], []
+    lambda_cells = split(slab.ll, slab.lr, nl)
     for tl, tr in split(tm, tp, nt):
-        for ll, lr in split(slab.ll, slab.lr, nl):
-            try:
-                v, charts, c = gt_box(tl, tr, ll, lr, panels)
-                cells += c; ch = int(charts.get("corner_hull", 0)); corner += ch
-                finite = _checked_finite(v, "gt_box", "GT", label, slab.depth, tl, tr, ll, lr, nonfinite)
-                good = finite and v.upper() < 0
-                if ch:
-                    corner_boxes.append((tl, tr, ll, lr))
-                if not finite: v = None
-            except REndpointDomainGuard as exc:
-                nonfinite.append(_nonfinite_record("R_ENDPOINT_DOMAIN_GUARD", "gt_box", "GT", label,
-                                                  slab.depth, tl, tr, ll, lr, str(exc)))
-                v, good = None, False
-            except (ValueError, ZeroDivisionError):
-                v, good = None, False
+        strip_results = []
+        for ll, lr in lambda_cells:
+            before_nf = len(nonfinite)
+            v, charts, c, good = _tube_gt_eval(slab, label, tl, tr, ll, lr, panels, nonfinite)
+            cells += c; ch = int(charts.get("corner_hull", 0)); corner += ch
+            finite = v is not None and len(nonfinite) == before_nf
+            if ch:
+                corner_boxes.append((tl, tr, ll, lr))
             guards.append((label, "GT", tl, tr, ll, lr, bool(good)))
-            gt_bad += 0 if good else 1
+            strip_results.append((ll, lr, v, finite, good))
             if v is not None and (gt_worst is None or v.upper() > gt_worst[0]):
                 gt_worst = (v.upper(), tl, tr, ll, lr)
-    for ll, lr in split(slab.ll, slab.lr, nl):
+        strip_good = all(item[4] for item in strip_results)
+        strip_all_finite = all(item[3] for item in strip_results)
+        if _t2_endpoint_activation(label, tr, strip_results):
+            recovered, trace, extra_work, extra_corner, extra_boxes, extra_nf, fail_kind = _t2_endpoint_refine(
+                slab, (tl, tr), lambda_cells, panels)
+            endpoint_refinement.append(trace)
+            cells += extra_work; corner += extra_corner
+            corner_boxes.extend(extra_boxes); nonfinite.extend(extra_nf)
+            strip_good = recovered
+        gt_bad += 0 if strip_good else 1
+    for ll, lr in lambda_cells:
         try:
             v, c = g_box(tm, tm, ll, lr, panels); cells += c
             finite = _checked_finite(v, "g_box", "LEFT", label, slab.depth, tm, tm, ll, lr, nonfinite)
@@ -709,25 +948,61 @@ def tube_stage(slab, tc, stage):
           "right_mode", "B_ob_receipt" if rclamp else "finite_t_wall",
           "gt_bad", gt_bad, "left_bad", left_bad, "right_bad", right_bad,
           "nonfinite", len(nonfinite), "corner_hull", corner,
+          "endpoint_refinements", len(endpoint_refinement),
           "gt_worst_upper", None if gt_worst is None else gt_worst[0].str(50),
           "left_worst_lower", None if left_worst is None else left_worst[0].str(50),
           "right_worst_upper", None if right_worst is None else right_worst[0].str(50))
     for rec in nonfinite:
         print("C1B_NONFINITE", rec)
-    return ok, tm, tp, lclamp, rclamp, corner, cells, label, guards, corner_boxes, nonfinite
+    return ok, tm, tp, lclamp, rclamp, corner, cells, label, guards, corner_boxes, nonfinite, endpoint_refinement
 
 def tube_first_pass(slab, tc):
     total = corner = 0
-    all_guards, all_corner_boxes, all_nonfinite = [], [], []
+    all_guards, all_corner_boxes, all_nonfinite, all_endpoint_refinement = [], [], [], []
     last = None
     for stage in T_STAGES:
         out = tube_stage(slab, tc, stage)
         last = out; total += out[6]; corner += out[5]
         all_guards.extend(out[8]); all_corner_boxes.extend(out[9]); all_nonfinite.extend(out[10])
+        all_endpoint_refinement.extend(out[11])
         if out[0]:
             print("C1B_TUBE_FIRST_PASS", slab.coarse, slab.depth, stage[0])
-            return True, out[1], out[2], out[3], out[4], corner, total, stage[0], all_guards, all_corner_boxes, all_nonfinite
-    return False, last[1], last[2], last[3], last[4], corner, total, None, all_guards, all_corner_boxes, all_nonfinite
+            return True, out[1], out[2], out[3], out[4], corner, total, stage[0], all_guards, all_corner_boxes, all_nonfinite, all_endpoint_refinement
+    return False, last[1], last[2], last[3], last[4], corner, total, None, all_guards, all_corner_boxes, all_nonfinite, all_endpoint_refinement
+
+def _refine_failed_root_gt_cell(slab, cell_index, a, b):
+    added_work = 0
+    chart_counts = defaultdict(int)
+    trace = {"cell_index": cell_index, "parent_t_cell": (a, b), "levels": []}
+    terminals = []
+    failed = [(a, b)]
+    for level in range(1, ROOT_GT_REFINE_DEPTH + 1):
+        level_children = []
+        next_failed = []
+        for pa, pb in failed:
+            pm = (pa + pb) / 2
+            for lo, hi in ((pa, pm), (pm, pb)):
+                added_work += ROOT_GT_PANELS
+                value, charts, _ = gt_box(lo, hi, slab.ll, slab.lr, ROOT_GT_PANELS)
+                for key, count in charts.items():
+                    chart_counts[key] += count
+                if not _arb_bounds_finite(value):
+                    raise REndpointDomainGuard("ROOT_GT_REFINEMENT_NONFINITE")
+                guard = bool(value.upper() < 0)
+                level_children.append({
+                    "t_cell": (lo, hi), "Gt": _arb_snapshot(value),
+                    "guard": guard, "work": ROOT_GT_PANELS,
+                })
+                if guard or level == ROOT_GT_REFINE_DEPTH:
+                    terminals.append((value, guard))
+                else:
+                    next_failed.append((lo, hi))
+        trace["levels"].append({"level": level, "children": level_children})
+        if not next_failed:
+            break
+        failed = next_failed
+    final_guard = bool(terminals) and all(guard for _, guard in terminals)
+    return [value for value, _ in terminals], trace, added_work, dict(chart_counts), final_guard
 
 def _outward_hull(values):
     if not values:
@@ -753,24 +1028,40 @@ def root_localize(slab, tm, tp):
         G0 = Gt = Gl = Gpar = candidate = None
         gt_cells, gt_values = [], []
         gl_cells, gl_values = [], []
+        gt_refinement = []
         gt_charts = defaultdict(int)
         gl_stats = defaultdict(int)
         try:
             work += ROOT_G_PANELS
             G0, _ = g_box(t_ref, t_ref, lambda_c, lambda_c, ROOT_G_PANELS)
-            for cell_lo, cell_hi in split(lo, hi, ROOT_GT_T_CELLS):
+            for cell_index, (cell_lo, cell_hi) in enumerate(split(lo, hi, ROOT_GT_T_CELLS)):
                 work += ROOT_GT_PANELS
                 value, charts, _ = gt_box(cell_lo, cell_hi, slab.ll, slab.lr, ROOT_GT_PANELS)
                 for key, count in charts.items():
                     gt_charts[key] += count
-                gt_values.append(value)
-                gt_cells.append({
+                if not _arb_bounds_finite(value):
+                    raise REndpointDomainGuard("ROOT_GT_ORDINARY_NONFINITE")
+                ordinary_guard = bool(value.upper() < 0)
+                cell_record = {
                     "t_cell": (cell_lo, cell_hi),
                     "Gt": _arb_snapshot(value),
-                    "guard": bool(value.upper() < 0),
+                    "guard": ordinary_guard,
                     "corner_hull": int(charts.get("corner_hull", 0)),
                     "work": ROOT_GT_PANELS,
-                })
+                }
+                if ordinary_guard:
+                    gt_values.append(value)
+                    cell_record["final_guard"] = True
+                else:
+                    terminals, trace, extra_work, extra_charts, recovered = _refine_failed_root_gt_cell(
+                        slab, cell_index, cell_lo, cell_hi)
+                    work += extra_work
+                    gt_refinement.append(trace)
+                    gt_values.extend(terminals)
+                    for key, count in extra_charts.items():
+                        gt_charts[key] += count
+                    cell_record["final_guard"] = bool(recovered)
+                gt_cells.append(cell_record)
             Gt = _outward_hull(gt_values)
             for cell_lo, cell_hi in split(lo, hi, ROOT_GL_T_CELLS):
                 work += ROOT_GL_PANELS
@@ -791,6 +1082,7 @@ def root_localize(slab, tm, tp):
                 "step": step, "T_k": T_k, "t_ref": t_ref, "lambda_c": lambda_c,
                 "G0": None if G0 is None else _arb_snapshot(G0),
                 "Gt": None if Gt is None else _arb_snapshot(Gt), "Gt_cells": gt_cells,
+                "Gt_refinement": gt_refinement,
                 "Gl": None if Gl is None else _arb_snapshot(Gl), "Gl_cells": gl_cells,
                 "Gpar": None, "N_k": None, "T_next": None, "width": hi-lo,
                 "division_guard": False, "empty_intersection": False,
@@ -811,16 +1103,17 @@ def root_localize(slab, tm, tp):
             "Gl": not _arb_bounds_finite(Gl),
             "Gpar": not _arb_bounds_finite(Gpar),
         }
-        all_guards = all(cell["guard"] for cell in gt_cells)
+        all_guards = all(cell.get("final_guard", cell["guard"]) for cell in gt_cells)
         candidate = _newton_candidate(t_ref, Gpar, Gt) if all_guards and not any(nonfinite.values()) else None
         guard = candidate is not None
         base_rec = {
             "step": step, "T_k": T_k, "t_ref": t_ref, "lambda_c": lambda_c,
             "G0": _arb_snapshot(G0), "Gt": _arb_snapshot(Gt), "Gt_cells": gt_cells,
+            "Gt_refinement": gt_refinement,
             "Gl": _arb_snapshot(Gl), "Gl_cells": gl_cells, "Gpar": _arb_snapshot(Gpar),
             "division_guard": guard, "gt_charts": dict(gt_charts), "gl_stats": dict(gl_stats),
             "nonfinite": nonfinite, "empty_intersection": False,
-            "step_work": ROOT_G_PANELS + ROOT_GT_T_CELLS*ROOT_GT_PANELS + ROOT_GL_T_CELLS*ROOT_GL_PANELS,
+            "step_work": work-work_before,
         }
         if any(nonfinite.values()):
             base_rec.update({"N_k": None, "T_next": None, "width": hi-lo})
@@ -1052,11 +1345,11 @@ def _attempt_with_tc(slab, tc, mode, predictor_work):
     work = {"predictor":predictor_work, "tube":0, "root":0, "exterior":0}
     if tc is None:
         return False, None, None, None, work, "PREDICTOR"
-    tok, tm, tp, lc, rc, corner, w, tstage, tube_guards, corner_boxes, tube_nonfinite = tube_first_pass(slab, tc); work["tube"] += w
+    tok, tm, tp, lc, rc, corner, w, tstage, tube_guards, corner_boxes, tube_nonfinite, tube_refinement = tube_first_pass(slab, tc); work["tube"] += w
     base_rec = {"slab":slab, "tc":tc, "mode":mode, "root":None, "sup_error":None,
                 "tm":tm, "tp":tp, "left_clamp":lc, "right_clamp":rc,
                 "corner_hull":corner, "corner_boxes":corner_boxes, "tube_stage":tstage,
-                "tube_guards":tube_guards, "tube_nonfinite":tube_nonfinite, "exterior_guards":[],
+                "tube_guards":tube_guards, "tube_nonfinite":tube_nonfinite, "tube_refinement":tube_refinement, "exterior_guards":[],
                 "exterior_nonfinite":[], "pieces":[],
                 "root_steps":[], "root_reason":None}
     if not tok:
@@ -1182,6 +1475,8 @@ def preflight():
     endpoint_regression_controls()
     v28_preflight_controls()
     v282_preflight_controls()
+    v29_preflight_controls()
+    v210_preflight_controls()
     diagnostic_controls()
     empty_remainder_control()
     predictor_selection_controls()

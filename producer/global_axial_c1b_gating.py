@@ -165,6 +165,57 @@ def _serialize_nonfinite(rec):
         "lambda_lo": persistence.rational_text(ll), "lambda_hi": persistence.rational_text(lr),
     }
 
+def _serialize_root_refinement(refinements):
+    out = []
+    for ref in refinements:
+        item = {
+            "cell_index": int(ref["cell_index"]),
+            "parent_t_cell": _rr(ref["parent_t_cell"]),
+            "levels": [],
+        }
+        for level in ref.get("levels", []):
+            item["levels"].append({
+                "level": int(level["level"]),
+                "children": [{
+                    "t_cell": _rr(child["t_cell"]),
+                    "Gt": child["Gt"],
+                    "guard": bool(child["guard"]),
+                    "work": int(child["work"]),
+                } for child in level.get("children", [])],
+            })
+        out.append(item)
+    return out
+
+
+def _serialize_tube_refinement(refinements):
+    out = []
+    for ref in refinements:
+        item = {
+            "parent_t_cell": _rr(ref["parent_t_cell"]),
+            "closed_depth": None if ref.get("closed_depth") is None else int(ref["closed_depth"]),
+            "levels": [],
+        }
+        for level in ref.get("levels", []):
+            children = []
+            for child in level.get("children", []):
+                children.append({
+                    "role": str(child["role"]),
+                    "t_cell": _rr(child["t_cell"]),
+                    "all_finite": bool(child["all_finite"]),
+                    "all_guard": bool(child["all_guard"]),
+                    "subcells": [{
+                        "t_cell": _rr(cell["t_cell"]),
+                        "lambda_cell": _rr(cell["lambda_cell"]),
+                        "finite": bool(cell["finite"]),
+                        "Gt_upper": cell["Gt_upper"],
+                        "guard": bool(cell["guard"]),
+                        "work": int(cell["work"]),
+                    } for cell in child.get("subcells", [])],
+                })
+            item["levels"].append({"level": int(level["level"]), "children": children})
+        out.append(item)
+    return out
+
 def serialize_mv_step(step):
     return {
         "step": int(step["step"]),
@@ -177,9 +228,11 @@ def serialize_mv_step(step):
             "t_cell": _rr(cell["t_cell"]),
             "Gt": cell["Gt"],
             "guard": bool(cell["guard"]),
+            "final_guard": bool(cell.get("final_guard", cell["guard"])),
             "corner_hull": int(cell["corner_hull"]),
             "work": int(cell["work"]),
         } for cell in step.get("Gt_cells", [])],
+        "Gt_refinement": _serialize_root_refinement(step.get("Gt_refinement", [])),
         "Gl": step["Gl"],
         "Gpar": step["Gpar"],
         "N_k": step["N_k"],
@@ -200,7 +253,7 @@ def serialize_record(rec, tc, mode, work, reason, trace):
         "T_star": None, "left_clamp": None, "right_clamp": None,
         "t_minus": None, "t_plus": None, "T_0": None,
         "root_gt_t_cells": 16, "corner_hull": None, "corner_boxes": [],
-        "tube_stage": None, "tube_guards": [], "tube_nonfinite": [],
+        "tube_stage": None, "tube_guards": [], "tube_nonfinite": [], "tube_refinement": [],
         "exterior_guards": [], "exterior_nonfinite": [], "predictor_nonfinite": [],
         "sup_error": None, "middle_partition": None,
         "work": {k: int(v) for k, v in work.items()},
@@ -225,6 +278,7 @@ def serialize_record(rec, tc, mode, work, reason, trace):
         "tube_stage": rec["tube_stage"],
         "tube_guards": [_serialize_guard(x) for x in rec.get("tube_guards", ())],
         "tube_nonfinite": [_serialize_nonfinite(x) for x in rec.get("tube_nonfinite", ())],
+        "tube_refinement": _serialize_tube_refinement(rec.get("tube_refinement", [])),
         "exterior_guards": [_serialize_guard(x) for x in rec.get("exterior_guards", ())],
         "exterior_nonfinite": [_serialize_nonfinite(x) for x in rec.get("exterior_nonfinite", ())],
         "sup_error": None if rec["sup_error"] is None else persistence.rational_text(rec["sup_error"]),
