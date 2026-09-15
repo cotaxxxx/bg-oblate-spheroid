@@ -37,6 +37,9 @@ ROOT_MV_STEPS = 8
 ROOT_G_PANELS, ROOT_GT_PANELS, ROOT_GL_PANELS = 32768, 8192, 8192
 ROOT_GT_T_CELLS = 16
 ROOT_GL_T_CELLS = 16
+ROOT_GL_CORNER_K = 16
+ROOT_GL_CORNER_TAU = Fraction(65535, 65536)
+ROOT_GL_CORNER_WALL_PANELS = 8192
 ROOT_GT_REFINE_DEPTH = 2
 T2_ENDPOINT_REFINE_DEPTH = 4
 E0_TBOXES, E0_LBOXES = 24, 8
@@ -44,9 +47,9 @@ E_STAGES = (("E0", 1024), ("E1", 2048), ("E2", 4096))
 E_BOX_CAP = 4096
 MONO_WORK_CAP = 1_048_576
 PRED_GRID_DEN, PRED_SCAN_PANELS = 1024, 256
-ATTEMPT_WORK_CEILING = 25_591_808
-GLOBAL_ATTEMPT_WORK_CEILING = 53_742_796_800
-ACCEPTED_WORK_CEILING = 28_662_824_960
+ATTEMPT_WORK_CEILING = 25_600_000
+GLOBAL_ATTEMPT_WORK_CEILING = 53_760_000_000
+ACCEPTED_WORK_CEILING = 28_672_000_000
 BOB_RECEIPT = Path("analysis/GLOBAL_AXIAL_C1B_BOB_MACHINE_RECEIPT.md")
 BOB_EVIDENCE_HEAD = "25efb59b851eb9d7a3d5ce30309eb8903d976930"
 BOB_CONTRACT_BLOB = "215193e2fc2a1abcf2aee2527c4c2e6f3176ea6c"
@@ -180,6 +183,143 @@ def glam_box(tl, tr, ll, lr, panels):
         bb = root if b == base.SQRT2 else base._point(b)
         z += _glam_density(base._box(aa, bb), t, lam, stats) * (bb-aa)
     return z, stats, panels
+
+
+def _v211_nonnegative(x):
+    lo = max(arb(0), x.lower())
+    hi = x.upper()
+    if hi < lo:
+        raise REndpointDomainGuard("GL_CORNER_NONNEGATIVE_EMPTY")
+    return base._box(lo, hi)
+
+
+def _v211_square(x):
+    lo, hi = x.lower(), x.upper()
+    if lo <= 0 <= hi:
+        return base._box(arb(0), max(lo * lo, hi * hi))
+    a, b = lo * lo, hi * hi
+    return base._box(min(a, b), max(a, b))
+
+
+def _root_gl_corner_wall_density(s, t, lam, first_panel, stats):
+    e = _v211_square(s)
+    gap = 2 - e
+    mu = 1 - e
+    delta = 1 - t
+    d = e - delta
+    l2 = _v211_square(lam)
+    A = 1 - t * mu
+    q = _v211_nonnegative(e * gap + l2 * _v211_square(d))
+    w2 = l2 * e * gap + _v211_square(mu)
+    w = w2.sqrt()
+    h = mu + l2 * d
+    if first_panel:
+        rho = base._box(arb(0), 1 / gap.lower().sqrt())
+        inv_lam_hi = (1 / lam).upper()
+        phi = base._box(-inv_lam_hi, inv_lam_hi)
+        Ahat = gap * s * rho - mu * phi
+        R = base._box(arb(1), arb.pi() / 2)
+        sqrtq = base._box(arb(0), max(arb(0), q.upper()).sqrt())
+        stats["corner_hull"] = stats.get("corner_hull", 0) + 1
+    else:
+        if not q.lower() > 0:
+            raise REndpointDomainGuard("GL_CORNER_WALL_Q_NONPOSITIVE")
+        sqrtq = q.sqrt()
+        rho = s / sqrtq
+        phi = d / sqrtq
+        Ahat = A / sqrtq
+        u = _v211_nonnegative(e * gap * h * h / (w2 * q))
+        R = _R_endpoint_safe(u, stats)
+        stats["ordinary"] = stats.get("ordinary", 0) + 1
+    B = -mu - l2 * Ahat * phi
+    return sqrtq * (
+        -mu * R * R * rho * rho * rho * gap * h * h / w2
+        - 2 * R * lam * rho * Ahat * B / w
+    )
+
+
+def root_gl_corner_wall_box(tau, ll, lr, panels=ROOT_GL_CORNER_WALL_PANELS):
+    if tau != ROOT_GL_CORNER_TAU:
+        raise REndpointDomainGuard("GL_CORNER_TAU_MISMATCH")
+    grid, root = base._partition(panels)
+    t, lam = interval(tau, tau), interval(ll, lr)
+    stats = {"corner_hull": 0, "ordinary": 0, "endpoint_safe": 0}
+    total = arb(0)
+    for index, (a, b) in enumerate(zip(grid, grid[1:])):
+        aa = root if a == base.SQRT2 else base._point(a)
+        bb = root if b == base.SQRT2 else base._point(b)
+        density = _root_gl_corner_wall_density(base._box(aa, bb), t, lam, index == 0, stats)
+        total += density * (bb - aa)
+    return total, stats, panels
+
+
+def _root_gl_corner_certificate(slab, context):
+    record = {
+        "tau": ROOT_GL_CORNER_TAU,
+        "lambda": (slab.ll, slab.lr),
+        "tube_stage": None if context is None else context.get("tube_stage"),
+        "right_clamp": bool(context and context.get("right_clamp")),
+        "tube_monotonicity_pass": bool(context and context.get("tube_monotonicity_pass")),
+        "bob_receipt_blob": BOB_RECEIPT_BLOB,
+        "bob_covers": bool(L_LO <= slab.ll <= slab.lr <= L_HI),
+        "evaluator": "root_gl_corner_wall_box",
+        "G_tau": None,
+        "work": 0,
+        "pass": False,
+    }
+    prereq = record["right_clamp"] and record["tube_monotonicity_pass"] and record["bob_covers"]
+    if not prereq:
+        return False, record, 0
+    try:
+        value, stats, work = root_gl_corner_wall_box(ROOT_GL_CORNER_TAU, slab.ll, slab.lr)
+        record["work"] = int(work)
+        record["wall_stats"] = dict(stats)
+        if _arb_bounds_finite(value):
+            record["G_tau"] = _arb_snapshot(value)
+            record["pass"] = bool(value.upper() < 0)
+        return bool(record["pass"]), record, int(work)
+    except (REndpointDomainGuard, ValueError, ZeroDivisionError) as exc:
+        record["detail"] = str(exc)
+        return False, record, ROOT_GL_CORNER_WALL_PANELS
+
+
+def _v211_exact_algebra_control():
+    points = (
+        (Fraction(1,10), Fraction(9,10), Fraction(3,5)),
+        (Fraction(1,2), Fraction(15,16), Fraction(7,12)),
+        (Fraction(3,4), Fraction(31,32), Fraction(29,50)),
+    )
+    for s0, t0, l0 in points:
+        e = s0*s0
+        gap = 2-e
+        mu = 1-e
+        delta = 1-t0
+        d = e-delta
+        l2 = l0*l0
+        A = 1-t0*mu
+        q = e*gap+l2*d*d
+        h = mu+l2*d
+        N = -mu*q-A*l2*d
+        if not (e == s0*s0 and
+                s0*e*gap*h*h/q == s0*s0*s0*gap*h*h/q and
+                N/q == -mu-l2*A*d/q):
+            return False
+    return True
+
+
+def _v211_schema_counts():
+    gating_path = Path(__file__).with_name("global_axial_c1b_gating.py")
+    compare_path = Path(__file__).parents[1] / "analysis" / "c1b_cross_lineage_compare.py"
+    def literal_assignment(path, name):
+        tree = ast.parse(path.read_text())
+        for node in tree.body:
+            if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == name for t in node.targets):
+                return ast.literal_eval(node.value)
+        raise RuntimeError(f"V211_SCHEMA_ASSIGNMENT_MISSING:{name}")
+    replay = literal_assignment(gating_path, "REPLAY_KEYS")
+    a1 = literal_assignment(compare_path, "A1_KEYS")
+    return len(replay)-1, len(replay), len(a1), ("Gl_corner_certificate" not in replay)
+
 
 def _arb_exact_fraction(x):
     if not x.is_finite():
@@ -606,6 +746,90 @@ def v210_preflight_controls():
     finally:
         g_box, gt_box = saved_g, saved_gt
 
+
+def v211_preflight_controls():
+    global g_box, gt_box, glam_box, root_gl_corner_wall_box
+    c0 = (ROOT_GL_CORNER_K == 16 and ROOT_GL_CORNER_TAU == Fraction(65535,65536)
+          and ROOT_GL_CORNER_K < 20 and ROOT_GL_CORNER_WALL_PANELS == ROOT_GL_PANELS)
+    print("C1B_V211_C4_FIXED_BAND", "PASS" if c0 else "FAIL",
+          "k", ROOT_GL_CORNER_K, "tau", ROOT_GL_CORNER_TAU)
+    if not c0: raise SystemExit("C1B_V211_C4_FAIL")
+
+    algebra_ok = _v211_exact_algebra_control()
+    intersections = True
+    for sf, tf, lf in ((Fraction(1,10),Fraction(9,10),Fraction(3,5)),
+                       (Fraction(1,2),Fraction(15,16),Fraction(7,12)),
+                       (Fraction(1),Fraction(31,32),Fraction(29,50))):
+        sb=base._box(base._point(sf),base._point(sf)); tb=interval(tf,tf); lb=interval(lf,lf)
+        legacy=_g_density_stable(sb,tb,lb,{"series":0,"direct":0,"series_hits_moving_u0":0,"chart_unresolved":0})
+        fresh=_root_gl_corner_wall_density(sb,tb,lb,False,{"corner_hull":0,"ordinary":0,"endpoint_safe":0})
+        intersections = intersections and not (legacy.upper() < fresh.lower() or fresh.upper() < legacy.lower())
+    eq_ok = algebra_ok and intersections
+    print("C1B_V211_WALL_EQUIVALENCE", "PASS" if eq_ok else "FAIL",
+          "exact_algebra", algebra_ok, "point_intersections", intersections)
+    if not eq_ok: raise SystemExit("C1B_V211_WALL_EQUIVALENCE_FAIL")
+
+    slab = Slab(105, 3, Fraction(931,1600), Fraction(149,256))
+    historical_lo = Fraction(481429049247,549755813888)
+    context = {"right_clamp":True,"tube_stage":"T2","tube_monotonicity_pass":True}
+    ok1, root1, work1, steps1, reason1 = root_localize(slab, historical_lo, T_HI, cert_context=context)
+    cert1 = next((x.get("Gl_corner_certificate") for x in steps1 if x.get("Gl_corner_certificate")), None)
+    c1 = (cert1 is not None and cert1.get("pass") is True and cert1.get("tau") == ROOT_GL_CORNER_TAU
+          and all(cell["t_cell"][1] <= ROOT_GL_CORNER_TAU for step in steps1 for cell in step.get("Gl_cells",[]))
+          and not ok1 and root1 == (historical_lo, ROOT_GL_CORNER_TAU)
+          and reason1 == "GT_DIVISION_GUARD_UNRESOLVED"
+          and steps1 and steps1[0].get("step",0) == 1 and steps1[0].get("Gl") is not None)
+    print("C1B_V211_C1_105_3", "PASS" if c1 else "FAIL", "ok", ok1,
+          "root", root1, "reason", reason1, "work", work1,
+          "G_tau_upper", None if cert1 is None else cert1.get("G_tau",{}).get("upper"))
+    if not c1: raise SystemExit("C1B_V211_C1_FAIL")
+
+    parent_hashes = {
+        "ordinary":"b350ec08d4dd72f4dd16fe60bebd5d80e7567d1a4e1e61ecf1113be8d1b3f7a4",
+        "near_tau":"263cb7ab285ca55ba7233c4bec6a66aaf7bb5db1d2b0fa6914989510216b15b7",
+    }
+    saved_g, saved_gt, saved_glam, saved_wall = g_box, gt_box, glam_box, root_gl_corner_wall_box
+    try:
+        wall_calls=[]
+        def sg(tl,tr,ll,lr,p): return arb(0),p
+        def sgt(tl,tr,ll,lr,p): return arb(-1),{},p
+        def sgl(tl,tr,ll,lr,p): return arb(0),{},p
+        def should_not_call(*args,**kwargs): wall_calls.append(args); raise RuntimeError("V211_NONACTIVATION_WALL_CALLED")
+        g_box,gt_box,glam_box,root_gl_corner_wall_box=sg,sgt,sgl,should_not_call
+        test_slab=Slab(12,2,Fraction(1,2),Fraction(401,800))
+        cases=(("ordinary",Fraction(1,2),Fraction(3,4)),
+               ("near_tau",ROOT_GL_CORNER_TAU-Fraction(1,64),ROOT_GL_CORNER_TAU))
+        c2=True
+        for tag,lo,hi in cases:
+            out=root_localize(test_slab,lo,hi)
+            digest=hashlib.sha256(repr(out).encode()).hexdigest()
+            c2 = c2 and digest == parent_hashes[tag]
+        c2 = c2 and not wall_calls
+        print("C1B_V211_C2_BIT_IDENTITY", "PASS" if c2 else "FAIL", "wall_calls",len(wall_calls))
+        if not c2: raise SystemExit("C1B_V211_C2_FAIL")
+
+        def positive_wall(tau,ll,lr,panels=ROOT_GL_CORNER_WALL_PANELS):
+            return arb(1), {"synthetic":1}, panels
+        def tube_g(tl,tr,ll,lr,p): return arb(1),p
+        def tube_gt(tl,tr,ll,lr,p): return arb(-1),{},p
+        g_box,gt_box,glam_box,root_gl_corner_wall_box=tube_g,tube_gt,sgl,positive_wall
+        ok3,rec3,_,_,work3,reason3=_attempt_with_tc(
+            Slab(115,3,Fraction(19,32),Fraction(3801,6400)), Fraction(15,16), "v211_c3", 0)
+        c3=(not ok3 and reason3=="ROOT:GL_CORNER_CERT_UNRESOLVED" and rec3 is not None
+            and rec3.get("root_reason")=="GL_CORNER_CERT_UNRESOLVED"
+            and work3["root"]==ROOT_GL_CORNER_WALL_PANELS)
+        print("C1B_V211_C3_FAIL_CLOSED", "PASS" if c3 else "FAIL", "reason",reason3,"root_work",work3["root"])
+        if not c3: raise SystemExit("C1B_V211_C3_FAIL")
+    finally:
+        g_box,gt_box,glam_box,root_gl_corner_wall_box=saved_g,saved_gt,saved_glam,saved_wall
+
+    a1n,replayn,cmpn,no_leak=_v211_schema_counts()
+    c5=(a1n==15 and replayn==16 and cmpn==14 and no_leak)
+    print("C1B_V211_C5_SCHEMA", "PASS" if c5 else "FAIL",
+          "A1",a1n,"replay",replayn,"compare",cmpn,"a2_absent",no_leak)
+    if not c5: raise SystemExit("C1B_V211_C5_FAIL")
+
+
 def endpoint_regression_controls():
     tp=Fraction(546857674007,2**39); ll=Fraction(231,400); lr=Fraction(3697,6400); t=interval(tp,tp); L=interval(ll,lr); c4=c5=True
     for i in (40,41,42):
@@ -987,8 +1211,23 @@ def _outward_hull(values):
     hi = max(v.upper() for v in values)
     return base._box(lo, hi)
 
-def root_localize(slab, tm, tp):
+def root_localize(slab, tm, tp, cert_context=None):
     lo, hi, work = tm, tp, 0
+    certificate = None
+    first_step_gt_hi = None
+    if hi == T_HI and lo < ROOT_GL_CORNER_TAU:
+        cert_ok, certificate, cert_work = _root_gl_corner_certificate(slab, cert_context)
+        work += cert_work
+        if not cert_ok:
+            print("C1B_ROOT_GL_CORNER_CERT", slab.coarse, slab.depth, "FAIL",
+                  "tau", ROOT_GL_CORNER_TAU, "work", cert_work)
+            return False, None, work, [{"step": 0, "Gl_corner_certificate": certificate,
+                                        "step_work": cert_work}], "GL_CORNER_CERT_UNRESOLVED"
+        first_step_gt_hi = hi
+        hi = ROOT_GL_CORNER_TAU
+        print("C1B_ROOT_GL_CORNER_CERT", slab.coarse, slab.depth, "PASS",
+              "tau", ROOT_GL_CORNER_TAU, "work", cert_work,
+              "G_tau_upper", certificate["G_tau"]["upper"])
     lambda_c = (slab.ll + slab.lr) / 2
     lambda_c_ball = base._point(lambda_c)
     dlambda = interval(slab.ll, slab.lr) - lambda_c_ball
@@ -1010,7 +1249,8 @@ def root_localize(slab, tm, tp):
         try:
             work += ROOT_G_PANELS
             G0, _ = g_box(t_ref, t_ref, lambda_c, lambda_c, ROOT_G_PANELS)
-            for cell_index, (cell_lo, cell_hi) in enumerate(split(lo, hi, ROOT_GT_T_CELLS)):
+            gt_hi = first_step_gt_hi if step == 1 and first_step_gt_hi is not None else hi
+            for cell_index, (cell_lo, cell_hi) in enumerate(split(lo, gt_hi, ROOT_GT_T_CELLS)):
                 work += ROOT_GT_PANELS
                 value, charts, _ = gt_box(cell_lo, cell_hi, slab.ll, slab.lr, ROOT_GT_PANELS)
                 for key, count in charts.items():
@@ -1091,6 +1331,8 @@ def root_localize(slab, tm, tp):
             "nonfinite": nonfinite, "empty_intersection": False,
             "step_work": work-work_before,
         }
+        if certificate is not None and step == 1:
+            base_rec["Gl_corner_certificate"] = certificate
         if any(nonfinite.values()):
             base_rec.update({"N_k": None, "T_next": None, "width": hi-lo})
             steps.append(base_rec)
@@ -1330,7 +1572,10 @@ def _attempt_with_tc(slab, tc, mode, predictor_work):
                 "root_steps":[], "root_reason":None}
     if not tok:
         return False, base_rec, None, tc, work, _tube_failure_reason(tube_nonfinite)
-    rok, root, w, root_steps, root_reason = root_localize(slab, tm, tp); work["root"] += w
+    cert_context = {"right_clamp": bool(rc), "tube_stage": tstage,
+                    "tube_monotonicity_pass": bool(tok)}
+    rok, root, w, root_steps, root_reason = root_localize(
+        slab, tm, tp, cert_context=cert_context); work["root"] += w
     base_rec.update({"root":root, "root_steps":root_steps, "root_reason":root_reason})
     if not rok:
         return False, base_rec, root, tc, work, "ROOT:" + root_reason
@@ -1447,7 +1692,7 @@ def preflight():
     print("PREDICTOR_ACCEPT", PRED_ACCEPT, "ROOT_TARGET", ROOT_TARGET)
     print("CLAMP_RULE", "max(1/2,tc-w0)", "min(1,tc+w0)", "w0", W0)
     print("CORNER_RULE", "tr==1 and first s-panel => checker corner_hull")
-    print("T_STAGES", T_STAGES, "ROOT_MV", (ROOT_MV_STEPS,ROOT_G_PANELS,ROOT_GT_PANELS,ROOT_GL_PANELS), "ROOT_GT_T_CELLS", ROOT_GT_T_CELLS, "ROOT_GL_T_CELLS", ROOT_GL_T_CELLS)
+    print("T_STAGES", T_STAGES, "ROOT_MV", (ROOT_MV_STEPS,ROOT_G_PANELS,ROOT_GT_PANELS,ROOT_GL_PANELS), "ROOT_GT_T_CELLS", ROOT_GT_T_CELLS, "ROOT_GL_T_CELLS", ROOT_GL_T_CELLS, "ROOT_GL_CORNER", (ROOT_GL_CORNER_K,ROOT_GL_CORNER_TAU,ROOT_GL_CORNER_WALL_PANELS))
     print("E_POLICY", E0_TBOXES, E0_LBOXES, E_STAGES, "cap", E_BOX_CAP)
     print("MONO_RULE left: Gt<0 on [a,t-]xL and G(t-)>0 => G>0 ; right: Gt<0 on [t+,b]xL and G(t+)<0 => G<0")
     print("MONO_WORK_CAP", MONO_WORK_CAP)
@@ -1463,6 +1708,7 @@ def preflight():
     v282_preflight_controls()
     v29_preflight_controls()
     v210_preflight_controls()
+    v211_preflight_controls()
     diagnostic_controls()
     empty_remainder_control()
     predictor_selection_controls()

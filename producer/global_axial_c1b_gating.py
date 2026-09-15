@@ -363,7 +363,7 @@ def write_replay_plan(ledger, run_dir):
 def estimates(kernel):
     predictor = 513 * 2 * kernel.PRED_SCAN_PANELS
     t0 = 8 * 4 * 4096 + 2 * 4 * 4096
-    root = kernel.ROOT_MV_STEPS * (kernel.ROOT_G_PANELS + kernel.ROOT_GT_T_CELLS * kernel.ROOT_GT_PANELS + kernel.ROOT_GL_T_CELLS * kernel.ROOT_GL_PANELS)
+    root = kernel.ROOT_GL_CORNER_WALL_PANELS + kernel.ROOT_MV_STEPS * (kernel.ROOT_G_PANELS + kernel.ROOT_GT_T_CELLS * kernel.ROOT_GT_PANELS + kernel.ROOT_GL_T_CELLS * kernel.ROOT_GL_PANELS)
     e0 = kernel.E0_TBOXES * kernel.E0_LBOXES * kernel.E_STAGES[0][1]
     early = kernel.N_COARSE * (predictor + t0 + root + e0)
     no_refine_late = kernel.N_COARSE * (
