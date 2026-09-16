@@ -33,6 +33,11 @@ exterior, MONO, predictor, g_box/gt_box evaluators, and the fail-closed reason
 GL_CORNER_CERT_UNRESOLVED are all byte-for-byte outside the scope of this
 amendment except where (i) and (ii) textually require edits inside
 root_localize and the record builder.
+Control additions are outside the three changes and expressly permitted:
+each kernel lineage adds one new function v2111_preflight_controls()
+implementing the section-4 controls, plus exactly one invocation line
+appended to the existing preflight control sequence. These additions are
+pure: no existing function body, constant, or control changes.
 
 Non-activated boxes remain bit-identical to v2.11 (the edits of (i) are
 reachable only under the activation condition; (ii) adds a key only when a
@@ -79,9 +84,11 @@ the acceptance receipt.
 
 C2 (bit-identity and confinement): (a) non-activated boxes reproduce v2.11
 outputs bit-for-bit (digest comparison on the v2.11 C2 cases; the wall
-evaluator must not be called); (b) diff confinement: all kernel hunks lie
-inside root_localize, and all gating hunks lie inside the slab-record
-builder; no other function is touched.
+evaluator must not be called); (b) diff confinement: kernel hunks lie inside root_localize, inside the
+new function v2111_preflight_controls, or are the single invocation line
+in the existing preflight control sequence; gating hunks lie inside the
+slab-record builder. No other function is touched, and the control
+additions modify no existing line.
 
 C3 (A.2 recording and schema purity): after C1, the in-memory slab record
 contains root_mv_steps[0]["Gl_corner_certificate"] with pass == True and
