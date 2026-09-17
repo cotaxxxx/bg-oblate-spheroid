@@ -118,8 +118,10 @@ next amendment with no launch.
 cases, output digests must be bit-identical and neither the P1 band evaluator nor the v2.11 P2 wall
 evaluator may be called. Diff confinement is mandatory: kernel hunks may occur only inside
 `root_localize`, inside the new band-evaluator function, inside the new `v212_preflight_controls`,
-inside `v211_preflight_controls` solely for the delegated V211-C1 terminal-reason assertion, or as
-exactly one invocation line added to the existing preflight control sequence. Gating hunks may occur
+inside `v211_preflight_controls` solely for the delegated V211-C1 terminal-reason assertion, as
+exactly one invocation line added to the existing preflight control sequence, or as exactly one
+module-level constant addition per kernel lineage, `ROOT_GT_CLAMP_TAU = Fraction(255, 256)`,
+placed adjacent to the existing `ROOT_GL_CORNER_TAU` definition and modifying no existing line. Gating hunks may occur
 only inside the slab-record builder. No other function or existing line may be touched.
 
 **V212-C3 — schema purity.** Machine checks require A.1 = 15 keys, replay = 16 keys, and cross-lineage
