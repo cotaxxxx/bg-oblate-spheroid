@@ -91,7 +91,11 @@ superseded; the unresolved-outcome assertion (`not ok1`) is removed as
 superseded, since v2.12 lawfully permits resolution; and the bracket
 assertion is replaced by a containment check that `root1` is a subset of
 `(historical_lo, ROOT_GT_CLAMP_TAU)`, which holds whether the case
-resolves (narrowed bracket) or fails closed (full clamped bracket). All other V211-C1 invariants remain mandatory: activation, exact P2 tau, certificate
+resolves (narrowed bracket) or fails closed (full clamped bracket).
+In addition, two schema-tracking token edits are permitted in the same
+control: the certificate tau is read from the `P2` subpayload introduced
+in section 1, and the Gl-cell upper bound is tightened from
+`ROOT_GL_CORNER_TAU` to `ROOT_GT_CLAMP_TAU`. All other V211-C1 invariants remain mandatory: activation, exact P2 tau, certificate
 PASS, no Q_BOX guard activation originating in the removed strip, and issuance of a normal MV-step
 record. No other existing V211 control assertion may change.
 
@@ -114,8 +118,10 @@ No gating ceiling or estimates formula change is authorized.
 
 **V212-C1 — canonical 105/3 replay.** Replay coarse 105 / depth 3 with historical bracket
 `lo = 481429049247/549755813888` and the pinned fifth-run tube context. Require P1 PASS and record
-all 16 P1 cell enclosures verbatim in the acceptance receipt. Require P2 PASS; its G_tau enclosure
-must be bit-identical to the pinned fifth-run v2.11 value. Require every step-1 Gt cell to be a subset
+all 16 P1 cell enclosures verbatim in the acceptance receipt. Require P2 PASS; its G_tau enclosure is printed and verified at
+acceptance to be bit-identical to the pinned fifth-run v2.11 value. The
+control prints N_k, T_next and the 16 P1 cell enclosures so the receipt
+can pin them verbatim. Require every step-1 Gt cell to be a subset
 of `[lo,255/256]` and to pass the division guard; record the worst step-1 Gt upper bound and require
 it strictly negative. The only lawful outcomes are: (a) complete ROOT resolution with finite N_k and
 a computed T_next; or (b) fail-closed termination, with the exact ROOT reason and terminating
@@ -129,8 +135,8 @@ next amendment with no launch.
 cases, output digests must be bit-identical and neither the P1 band evaluator nor the v2.11 P2 wall
 evaluator may be called. Diff confinement is mandatory: kernel hunks may occur only inside
 `root_localize`, inside the new band-evaluator function, inside the new `v212_preflight_controls`,
-inside `v211_preflight_controls` solely for the delegated V211-C1 outcome assertions (terminal-reason,
-unresolved-outcome, and bracket containment), as
+inside `v211_preflight_controls` solely for the delegated V211-C1 outcome assertions (terminal-reason, unresolved-outcome, bracket containment, and the two
+schema-tracking token edits of section 3), as
 exactly one invocation line added to the existing preflight control sequence, or as exactly one
 module-level constant addition per kernel lineage, `ROOT_GT_CLAMP_TAU = Fraction(255, 256)`,
 placed adjacent to the existing `ROOT_GL_CORNER_TAU` definition and modifying no existing line. Gating hunks may occur
