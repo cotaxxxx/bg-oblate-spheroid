@@ -39,6 +39,7 @@ ROOT_GT_T_CELLS = 16
 ROOT_GL_T_CELLS = 16
 ROOT_GL_CORNER_K = 16
 ROOT_GL_CORNER_TAU = Fraction(65535, 65536)
+ROOT_GT_CLAMP_TAU = Fraction(255, 256)
 ROOT_GL_CORNER_WALL_PANELS = 8192
 ROOT_GT_REFINE_DEPTH = 2
 T2_ENDPOINT_REFINE_DEPTH = 4
@@ -250,6 +251,18 @@ def root_gl_corner_wall_box(tau, ll, lr, panels=ROOT_GL_CORNER_WALL_PANELS):
         bb = root if b == base.SQRT2 else base._point(b)
         density = _root_gl_corner_wall_density(base._box(aa, bb), t, lam, index == 0, stats)
         total += density * (bb - aa)
+    return total, stats, panels
+
+
+def root_gl_corner_band_box(t_lo, t_hi, ll, lr, panels=ROOT_GL_CORNER_WALL_PANELS):
+    grid, root = base._partition(panels)
+    t, lam = interval(t_lo, t_hi), interval(ll, lr)
+    stats = {"corner_hull": 0, "ordinary": 0, "endpoint_safe": 0}
+    total = arb(0)
+    for index, (a, b) in enumerate(zip(grid, grid[1:])):
+        aa = root if a == base.SQRT2 else base._point(a)
+        bb = root if b == base.SQRT2 else base._point(b)
+        total += _root_gl_corner_wall_density(base._box(aa, bb), t, lam, index == 0, stats) * (bb - aa)
     return total, stats, panels
 
 
@@ -774,10 +787,9 @@ def v211_preflight_controls():
     context = {"right_clamp":True,"tube_stage":"T2","tube_monotonicity_pass":True}
     ok1, root1, work1, steps1, reason1 = root_localize(slab, historical_lo, T_HI, cert_context=context)
     cert1 = next((x.get("Gl_corner_certificate") for x in steps1 if x.get("Gl_corner_certificate")), None)
-    c1 = (cert1 is not None and cert1.get("pass") is True and cert1.get("tau") == ROOT_GL_CORNER_TAU
-          and all(cell["t_cell"][1] <= ROOT_GL_CORNER_TAU for step in steps1 for cell in step.get("Gl_cells",[]))
-          and not ok1 and root1 == (historical_lo, ROOT_GL_CORNER_TAU)
-          and reason1 == "GT_DIVISION_GUARD_UNRESOLVED"
+    c1 = (cert1 is not None and cert1.get("pass") is True and cert1.get("P2",{}).get("tau") == ROOT_GL_CORNER_TAU
+          and all(cell["t_cell"][1] <= ROOT_GT_CLAMP_TAU for step in steps1 for cell in step.get("Gl_cells",[]))
+          and root1 is not None and historical_lo <= root1[0] <= root1[1] <= ROOT_GT_CLAMP_TAU
           and steps1 and steps1[0].get("step",0) == 1 and steps1[0].get("Gl") is not None)
     print("C1B_V211_C1_105_3", "PASS" if c1 else "FAIL", "ok", ok1,
           "root", root1, "reason", reason1, "work", work1,
@@ -1214,20 +1226,28 @@ def _outward_hull(values):
 def root_localize(slab, tm, tp, cert_context=None):
     lo, hi, work = tm, tp, 0
     certificate = None
-    first_step_gt_hi = None
-    if hi == T_HI and lo < ROOT_GL_CORNER_TAU:
-        cert_ok, certificate, cert_work = _root_gl_corner_certificate(slab, cert_context)
-        work += cert_work
-        if not cert_ok:
-            print("C1B_ROOT_GL_CORNER_CERT", slab.coarse, slab.depth, "FAIL",
-                  "tau", ROOT_GL_CORNER_TAU, "work", cert_work)
-            return False, None, work, [{"step": 0, "Gl_corner_certificate": certificate,
-                                        "step_work": cert_work}], "GL_CORNER_CERT_UNRESOLVED"
-        first_step_gt_hi = hi
-        hi = ROOT_GL_CORNER_TAU
-        print("C1B_ROOT_GL_CORNER_CERT", slab.coarse, slab.depth, "PASS",
-              "tau", ROOT_GL_CORNER_TAU, "work", cert_work,
-              "G_tau_upper", certificate["G_tau"]["upper"])
+    if hi == T_HI and lo < ROOT_GT_CLAMP_TAU:
+        p2_ok, p2, p2_work = _root_gl_corner_certificate(slab, cert_context)
+        work += p2_work
+        certificate = {"P1": None, "P2": p2, "pass": False}
+        if not p2_ok:
+            return False, None, work, [{"step": 0, "Gl_corner_certificate": certificate, "step_work": p2_work}], "GL_CORNER_CERT_UNRESOLVED"
+        cells=[]; p1_work=0; p1_ok=True
+        for a,b in split(ROOT_GT_CLAMP_TAU, ROOT_GL_CORNER_TAU, ROOT_GL_CORNER_K):
+            try:
+                v,stats,cw=root_gl_corner_band_box(a,b,slab.ll,slab.lr); p1_work += cw
+                finite=_arb_bounds_finite(v); guard=bool(finite and v.upper()<0)
+                cells.append({"t_cell":(a,b),"enclosure":_arb_snapshot(v) if finite else None,"wall_stats":dict(stats),"work":cw,"guard":guard})
+                if not guard: p1_ok=False; break
+            except (REndpointDomainGuard, ValueError, ZeroDivisionError) as exc:
+                p1_work += ROOT_GL_CORNER_WALL_PANELS; cells.append({"t_cell":(a,b),"detail":str(exc),"work":ROOT_GL_CORNER_WALL_PANELS,"guard":False}); p1_ok=False; break
+        work += p1_work
+        certificate["P1"]={"tau_prime":ROOT_GT_CLAMP_TAU,"tau":ROOT_GL_CORNER_TAU,"evaluator":"root_gl_corner_band_box","panels":ROOT_GL_CORNER_WALL_PANELS,"cells":cells,"work":p1_work,"pass":p1_ok}
+        certificate["pass"]=bool(p1_ok and p2_ok)
+        if not certificate["pass"]:
+            return False,None,work,[{"step":0,"Gl_corner_certificate":certificate,"step_work":p1_work+p2_work}],"GL_CORNER_CERT_UNRESOLVED"
+        hi=ROOT_GT_CLAMP_TAU
+        print("C1B_ROOT_GL_CORNER_CERT",slab.coarse,slab.depth,"PASS","tau_prime",ROOT_GT_CLAMP_TAU,"tau",ROOT_GL_CORNER_TAU,"work",p1_work+p2_work,"G_tau_upper",p2["G_tau"]["upper"])
     lambda_c = (slab.ll + slab.lr) / 2
     lambda_c_ball = base._point(lambda_c)
     dlambda = interval(slab.ll, slab.lr) - lambda_c_ball
@@ -1249,8 +1269,7 @@ def root_localize(slab, tm, tp, cert_context=None):
         try:
             work += ROOT_G_PANELS
             G0, _ = g_box(t_ref, t_ref, lambda_c, lambda_c, ROOT_G_PANELS)
-            gt_hi = first_step_gt_hi if step == 1 and first_step_gt_hi is not None else hi
-            for cell_index, (cell_lo, cell_hi) in enumerate(split(lo, gt_hi, ROOT_GT_T_CELLS)):
+            for cell_index, (cell_lo, cell_hi) in enumerate(split(lo, hi, ROOT_GT_T_CELLS)):
                 work += ROOT_GT_PANELS
                 value, charts, _ = gt_box(cell_lo, cell_hi, slab.ll, slab.lr, ROOT_GT_PANELS)
                 for key, count in charts.items():
@@ -1680,6 +1699,25 @@ def empty_remainder_control():
     print("C1B_EMPTY_REMAINDER_CONTROL","PASS" if ok else "FAIL","arity",len(out),"value",out)
     if not ok: raise SystemExit("C1B_EMPTY_REMAINDER_CONTROL_FAIL")
 
+def v212_preflight_controls():
+    slab=Slab(105,3,Fraction(931,1600),Fraction(149,256)); historical_lo=Fraction(481429049247,549755813888)
+    context={"right_clamp":True,"tube_stage":"T2","tube_monotonicity_pass":True}
+    ok,root,work,steps,reason=root_localize(slab,historical_lo,T_HI,cert_context=context)
+    cert=next((x.get("Gl_corner_certificate") for x in steps if x.get("Gl_corner_certificate")),None); p1={} if cert is None else cert.get("P1") or {}; p2={} if cert is None else cert.get("P2") or {}
+    gt=steps[0].get("Gt_cells",[]) if steps and steps[0].get("step")==1 else []; worst=max((c["Gt"]["upper"] for c in gt),default=None)
+    c1=bool(cert and cert.get("pass") and p1.get("pass") and p2.get("pass") and p1.get("work")==131072 and all(c["t_cell"][1]<=ROOT_GT_CLAMP_TAU and c.get("final_guard",c["guard"]) for c in gt) and ((ok and root is not None) or (not ok and reason)))
+    print("C1B_V212_C1","PASS" if c1 else "FAIL","outcome","a" if ok else "b","root",root,"reason",reason,"work",work,"worst_step1_Gt_upper",worst,"N_k",None if not steps else steps[-1].get("N_k"),"T_next",None if not steps else steps[-1].get("T_next"),"P1_enclosures",[c.get("enclosure") for c in p1.get("cells",[])]);
+    if not c1: raise SystemExit("C1B_V212_C1_FAIL")
+    top=[]; ll,lr=Fraction(499,800),Fraction(5,8)
+    for a,b in split(ROOT_GT_CLAMP_TAU,ROOT_GL_CORNER_TAU,16):
+        v,stats,w=root_gl_corner_band_box(a,b,ll,lr); top.append(_arb_snapshot(v))
+    c5=len(top)==16 and all(arb(x["upper"])<0 for x in top); c5_work=ROOT_GL_CORNER_K*ROOT_GL_CORNER_WALL_PANELS; print("C1B_V212_C5_SWEEP_TOP","PASS" if c5 else "FAIL","lambda",(ll,lr),"work",c5_work,"enclosures",top)
+    if not c5: raise SystemExit("C1B_V212_C5_FAIL")
+    a,_,_=root_gl_corner_band_box(ROOT_GL_CORNER_TAU,ROOT_GL_CORNER_TAU,slab.ll,slab.lr); b,_,_=root_gl_corner_wall_box(ROOT_GL_CORNER_TAU,slab.ll,slab.lr)
+    c4=_arb_snapshot(a)==_arb_snapshot(b); print("C1B_V212_C4_THIN_EQ","PASS" if c4 else "FAIL")
+    if not c4: raise SystemExit("C1B_V212_C4_FAIL")
+
+
 def preflight():
     ok = (L_LO < L_HI and DLAM > 0 and N_COARSE == 140 and MAX_DEPTH == 3)
     print("GLOBAL_AXIAL_C1B_CHECKER — IMPLEMENTED_PROTOTYPE / MACHINE_NOT_RUN / NOT_BINDING")
@@ -1709,6 +1747,7 @@ def preflight():
     v29_preflight_controls()
     v210_preflight_controls()
     v211_preflight_controls()
+    v212_preflight_controls()
     diagnostic_controls()
     empty_remainder_control()
     predictor_selection_controls()
