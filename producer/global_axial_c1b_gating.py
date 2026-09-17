@@ -216,7 +216,29 @@ def _serialize_tube_refinement(refinements):
         out.append(item)
     return out
 
+def _serialize_gl_corner_certificate(cert):
+    if cert is None:
+        return None
+    def convert(value):
+        if isinstance(value, Fraction):
+            return persistence.rational_text(value)
+        if isinstance(value, dict):
+            return {key: convert(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [convert(item) for item in value]
+        if isinstance(value, tuple):
+            return [convert(item) for item in value]
+        return value
+    return convert(cert)
+
 def serialize_mv_step(step):
+    if int(step["step"]) == 0:
+        return {
+            "step": 0,
+            "step_work": int(step["step_work"]),
+            **({"Gl_corner_certificate": _serialize_gl_corner_certificate(step["Gl_corner_certificate"])}
+               if "Gl_corner_certificate" in step else {}),
+        }
     return {
         "step": int(step["step"]),
         "T_k": _rr(step["T_k"]),
@@ -244,7 +266,7 @@ def serialize_mv_step(step):
         "gl_stats": {str(k): int(v) for k, v in step["gl_stats"].items()},
         "step_work": int(step["step_work"]),
         "nonfinite": step.get("nonfinite"),
-        **({"Gl_corner_certificate": step["Gl_corner_certificate"]}
+        **({"Gl_corner_certificate": _serialize_gl_corner_certificate(step["Gl_corner_certificate"])}
            if "Gl_corner_certificate" in step else {}),
     }
 

@@ -1699,6 +1699,82 @@ def empty_remainder_control():
     print("C1B_EMPTY_REMAINDER_CONTROL","PASS" if ok else "FAIL","arity",len(out),"value",out)
     if not ok: raise SystemExit("C1B_EMPTY_REMAINDER_CONTROL_FAIL")
 
+def _v212_c6_write_through(pass_steps, slab):
+    import importlib
+    import json
+    import os
+    import tempfile
+    lineage = __name__.split(".", 1)[0]
+    gating = importlib.import_module(lineage + ".global_axial_c1b_gating")
+    assert type(ROOT_GT_CLAMP_TAU) is Fraction
+    assert type(ROOT_GL_CORNER_TAU) is Fraction
+    print("C1B_V212_C6_CONSTANT_TYPES", "PASS",
+          "ROOT_GT_CLAMP_TAU", type(ROOT_GT_CLAMP_TAU).__name__,
+          "ROOT_GL_CORNER_TAU", type(ROOT_GL_CORNER_TAU).__name__)
+
+    def persist(label, steps):
+        rec = {
+            "mode": "v212_c6", "tc": Fraction(1,2), "root": None,
+            "left_clamp": False, "right_clamp": True,
+            "tm": Fraction(1,2), "tp": T_HI, "corner_hull": 0,
+            "corner_boxes": [], "tube_stage": "T2", "tube_guards": [],
+            "tube_nonfinite": [], "tube_refinement": [],
+            "exterior_guards": [], "exterior_nonfinite": [],
+            "sup_error": None, "root_steps": steps,
+            "root_reason": None, "pieces": [],
+        }
+        work = {"predictor":0, "tube":0, "root":0, "exterior":0}
+        result = gating.serialize_record(rec, rec["tc"], rec["mode"], work, None, {})
+        payload = {"attempt_sequence":0, **gating.slab_payload(slab),
+                   "decision":"ABORT", "result":result}
+        raw = gating.persistence.canonical_bytes(payload)
+        outdir = os.environ.get("C1B_PREFLIGHT_RECORD_DIR")
+        if not outdir:
+            outdir = tempfile.mkdtemp(prefix="c1b_v212_c6_")
+        path = Path(outdir); path.mkdir(parents=True, exist_ok=True)
+        target = path / (lineage + "_v212_c6_" + label.lower() + ".json")
+        target.write_bytes(raw)
+        loaded = json.loads(target.read_text())
+        assert loaded == payload
+        cert = loaded["result"]["root_mv_steps"][0]["Gl_corner_certificate"]
+        def no_fraction_shape(value):
+            if isinstance(value, dict):
+                return all(no_fraction_shape(v) for v in value.values())
+            if isinstance(value, list):
+                return all(no_fraction_shape(v) for v in value)
+            return not isinstance(value, Fraction)
+        assert no_fraction_shape(cert)
+        tau = cert["P2"]["tau"]
+        assert isinstance(tau, str) and Fraction(tau) == ROOT_GL_CORNER_TAU
+        if cert.get("P1") is not None:
+            assert isinstance(cert["P1"]["tau_prime"], str)
+            assert isinstance(cert["P1"]["tau"], str)
+            assert all(isinstance(x, str) for c in cert["P1"]["cells"] for x in c["t_cell"])
+        print("C1B_V212_C6_" + label, "PASS", "bytes", len(raw),
+              "roundtrip_tau", tau)
+        return cert
+
+    pass_cert = persist("PASS_WRITE_THROUGH", pass_steps)
+
+    global root_gl_corner_wall_box
+    saved = root_gl_corner_wall_box
+    try:
+        def synthetic_p2_fail(tau, ll, lr, panels=ROOT_GL_CORNER_WALL_PANELS):
+            return arb(1), {"synthetic":1}, panels
+        root_gl_corner_wall_box = synthetic_p2_fail
+        context = {"right_clamp":True,"tube_stage":"T2","tube_monotonicity_pass":True}
+        ok, root, work, steps, reason = root_localize(
+            slab, Fraction(1,2), T_HI, cert_context=context)
+        assert not ok and root is None and reason == "GL_CORNER_CERT_UNRESOLVED"
+        assert steps and steps[0]["step"] == 0
+        cert = steps[0]["Gl_corner_certificate"]
+        assert cert["P1"] is None and cert["P2"]["pass"] is False
+        fail_cert = persist("FAIL_WRITE_THROUGH", steps)
+        assert fail_cert["P1"] is None and fail_cert["P2"]["pass"] is False
+    finally:
+        root_gl_corner_wall_box = saved
+    return pass_cert
+
 def v212_preflight_controls():
     slab=Slab(105,3,Fraction(931,1600),Fraction(149,256)); historical_lo=Fraction(481429049247,549755813888)
     context={"right_clamp":True,"tube_stage":"T2","tube_monotonicity_pass":True}
@@ -1708,6 +1784,7 @@ def v212_preflight_controls():
     c1=bool(cert and cert.get("pass") and p1.get("pass") and p2.get("pass") and p1.get("work")==131072 and all(c["t_cell"][1]<=ROOT_GT_CLAMP_TAU and c.get("final_guard",c["guard"]) for c in gt) and ((ok and root is not None) or (not ok and reason)))
     print("C1B_V212_C1","PASS" if c1 else "FAIL","outcome","a" if ok else "b","root",root,"reason",reason,"work",work,"worst_step1_Gt_upper",worst,"N_k",None if not steps else steps[-1].get("N_k"),"T_next",None if not steps else steps[-1].get("T_next"),"P1_enclosures",[c.get("enclosure") for c in p1.get("cells",[])]);
     if not c1: raise SystemExit("C1B_V212_C1_FAIL")
+    _v212_c6_write_through(steps, slab)
     top=[]; ll,lr=Fraction(499,800),Fraction(5,8)
     for a,b in split(ROOT_GT_CLAMP_TAU,ROOT_GL_CORNER_TAU,16):
         v,stats,w=root_gl_corner_band_box(a,b,ll,lr); top.append(_arb_snapshot(v))
