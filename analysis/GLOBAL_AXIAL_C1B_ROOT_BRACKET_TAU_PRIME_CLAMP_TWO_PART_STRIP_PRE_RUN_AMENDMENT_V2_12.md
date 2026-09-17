@@ -162,6 +162,10 @@ receipt.
 
 **V212-C6 — A.2 write-through, both paths.** This control is hard-fail in both lineages and exercises production persistence on both certificate outcomes. (a) PASS path: take the V212-C1 replay result, build the full slab record through the production record builder, serialize it through the production canonical-bytes path to a file under `C1B_PREFLIGHT_RECORD_DIR`, require no exception, require every exact rational certificate field (including tau and all P1/P2 rational fields) to be a canonical fraction string, and require JSON-load round-trip equality; print PASS/FAIL and byte length. (b) FAIL path: following the V211-C3 precedent, synthetically force P2 FAIL by injecting a wall result with `G_tau.upper() >= 0`, obtain the step-0 early-return record whose certificate is `{"P1": None, "P2": p2, "pass": False}`, and pass the resulting full slab record through the same production builder and canonical-bytes/file/round-trip path with the same rational-string checks; print the round-tripped tau string as evidence. No additional evaluator work is charged. (c) Before either path, assert `type(ROOT_GT_CLAMP_TAU) is Fraction` and `type(ROOT_GL_CORNER_TAU) is Fraction`, and print the successful type check.
 
+## 5A. v2.12-C5 scope amendment — persistence repair confinement
+
+Implementation scope additionally permits producer/checker gating hunks inside `serialize_mv_step`, or one new helper called only from that function, solely to convert `Gl_corner_certificate` into its canonical persistence representation. This exception is necessary because the observed serialization defect is at the gating persistence boundary; moving the repair into the kernel would violate the computation/persistence type separation above and the existing V211-C1 requirement that the in-memory certificate tau remain a `Fraction`. Driver, ledger machinery, all other serializers, and all other record-builder keys remain unchanged. Diff confinement is judged with this explicit exception.
+
 ## 6. Required implementation and acceptance sequence
 
 1. Freeze this doc-only predeclare before any implementation.
