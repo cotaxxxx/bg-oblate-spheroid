@@ -244,6 +244,8 @@ def serialize_mv_step(step):
         "gl_stats": {str(k): int(v) for k, v in step["gl_stats"].items()},
         "step_work": int(step["step_work"]),
         "nonfinite": step.get("nonfinite"),
+        **({"Gl_corner_certificate": step["Gl_corner_certificate"]}
+           if "Gl_corner_certificate" in step else {}),
     }
 
 def serialize_record(rec, tc, mode, work, reason, trace):
