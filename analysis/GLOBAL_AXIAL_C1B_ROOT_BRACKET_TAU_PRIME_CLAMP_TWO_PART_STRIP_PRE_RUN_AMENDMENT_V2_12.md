@@ -71,6 +71,10 @@ receipt condition, or lacks strict negativity, the certificate FAILS closed with
 `GL_CORNER_CERT_UNRESOLVED`, and root_localize does not use the tau-prime clamp. P1 and P2 results
 are both retained in the A.2 certificate payload whenever evaluated.
 
+P2 is evaluated first, and P1 is evaluated only if P2 passes; on a P2
+failure the certificate fails closed with no P1 evaluation and no P1
+work charge.
+
 Only a PASS authorizes replacing the ROOT bracket `[lo,1]` by `[lo,tau-prime]`. Consequently all MV
 Gt/Gl domains are subsets of that certified bracket and the excluded strip contains no root.
 
@@ -80,9 +84,11 @@ v2.11.1 (`34f1ad0f`, corrections `572a84a1` and `892a846d`) is superseded wholes
 implemented. Its intended first-step/full-step Gt clamp and A.2 recording are replaced/inherited as
 specified here. No implementation commit may be made from the v2.11.1 specification itself.
 
-The existing `V211-C1` terminal-reason assertion is delegated to `V212-C1`. The single corresponding
-assertion inside `v211_preflight_controls` may be edited only to remove the superseded terminal-reason
-expectation. All other V211-C1 invariants remain mandatory: activation, exact P2 tau, certificate
+The existing `V211-C1` terminal-reason assertion is delegated to `V212-C1`. The two corresponding assertions inside `v211_preflight_controls` may be
+edited only as follows: the terminal-reason assertion is removed as
+superseded, and the bracket-endpoint assertion replaces
+`ROOT_GL_CORNER_TAU` by `ROOT_GT_CLAMP_TAU` as the expected high
+endpoint. All other V211-C1 invariants remain mandatory: activation, exact P2 tau, certificate
 PASS, no Q_BOX guard activation originating in the removed strip, and issuance of a normal MV-step
 record. No other existing V211 control assertion may change.
 
@@ -92,6 +98,8 @@ P1 charges exactly `16 * ROOT_GL_CORNER_WALL_PANELS = 16 * 8192 = 131072` units 
 in addition to unchanged P2 and ROOT-MV work. This charge is included on PASS and on evaluated
 fail-closed paths according to the cells actually evaluated; acceptance controls must demonstrate
 the full 131072 charge for canonical P1 PASS.
+
+V212-C5 charges the same 131072 units per lineage on the preflight side.
 
 The three ceilings remain unchanged:
 `ATTEMPT_WORK_CEILING = 25_600_000`,
@@ -118,7 +126,8 @@ next amendment with no launch.
 cases, output digests must be bit-identical and neither the P1 band evaluator nor the v2.11 P2 wall
 evaluator may be called. Diff confinement is mandatory: kernel hunks may occur only inside
 `root_localize`, inside the new band-evaluator function, inside the new `v212_preflight_controls`,
-inside `v211_preflight_controls` solely for the delegated V211-C1 terminal-reason assertion, as
+inside `v211_preflight_controls` solely for the delegated V211-C1
+terminal-reason and bracket-endpoint assertions, as
 exactly one invocation line added to the existing preflight control sequence, or as exactly one
 module-level constant addition per kernel lineage, `ROOT_GT_CLAMP_TAU = Fraction(255, 256)`,
 placed adjacent to the existing `ROOT_GL_CORNER_TAU` definition and modifying no existing line. Gating hunks may occur
@@ -131,6 +140,14 @@ A.2-only and absent from replay and A.1 comparison schemas.
 **V212-C4 — thin-t anchor identity.** In each lineage, the new band evaluator evaluated on the thin
 t-cell `t=tau` must be bit-identical to `root_gl_corner_wall_box(tau)` for the same lambda slab,
 including the enclosure. Any mismatch FAILS preflight.
+
+**V212-C5 — sweep-top band wall.** In each lineage, evaluate the P1 band
+construction (16 uniform fat t-cells spanning `[255/256,65535/65536]`,
+`ROOT_GL_CORNER_WALL_PANELS = 8192` per cell, no refinement) on the
+sweep-top coarse-139 lambda slab `[499/800,5/8]`. All 16 enclosures must
+be finite with strictly negative upper bounds; any other result FAILS
+preflight. The 16 enclosures are pinned verbatim in the acceptance
+receipt.
 
 ## 6. Required implementation and acceptance sequence
 
