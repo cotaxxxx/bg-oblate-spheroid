@@ -11,9 +11,9 @@ jobs:
       - name: Check out exact diagnostic source
         uses: actions/checkout@v4
         with:
-          ref: 1fd9451bee76147a4160a4909dca7ee2941016eb
+          ref: 835e6b5cfa2b0667f6182d9724f6bcc4a629b401
       - name: Verify source SHA
-        run: test "$(git rev-parse HEAD)" = "1fd9451bee76147a4160a4909dca7ee2941016eb"
+        run: test "$(git rev-parse HEAD)" = "835e6b5cfa2b0667f6182d9724f6bcc4a629b401"
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
