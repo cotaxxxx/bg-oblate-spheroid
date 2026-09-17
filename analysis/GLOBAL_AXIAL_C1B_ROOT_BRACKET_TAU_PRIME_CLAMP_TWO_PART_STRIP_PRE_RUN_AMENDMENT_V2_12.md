@@ -84,11 +84,14 @@ v2.11.1 (`34f1ad0f`, corrections `572a84a1` and `892a846d`) is superseded wholes
 implemented. Its intended first-step/full-step Gt clamp and A.2 recording are replaced/inherited as
 specified here. No implementation commit may be made from the v2.11.1 specification itself.
 
-The existing `V211-C1` terminal-reason assertion is delegated to `V212-C1`. The two corresponding assertions inside `v211_preflight_controls` may be
-edited only as follows: the terminal-reason assertion is removed as
-superseded, and the bracket-endpoint assertion replaces
-`ROOT_GL_CORNER_TAU` by `ROOT_GT_CLAMP_TAU` as the expected high
-endpoint. All other V211-C1 invariants remain mandatory: activation, exact P2 tau, certificate
+The existing `V211-C1` outcome assertions are delegated to `V212-C1`.
+The three corresponding assertions inside `v211_preflight_controls` may
+be edited only as follows: the terminal-reason assertion is removed as
+superseded; the unresolved-outcome assertion (`not ok1`) is removed as
+superseded, since v2.12 lawfully permits resolution; and the bracket
+assertion is replaced by a containment check that `root1` is a subset of
+`(historical_lo, ROOT_GT_CLAMP_TAU)`, which holds whether the case
+resolves (narrowed bracket) or fails closed (full clamped bracket). All other V211-C1 invariants remain mandatory: activation, exact P2 tau, certificate
 PASS, no Q_BOX guard activation originating in the removed strip, and issuance of a normal MV-step
 record. No other existing V211 control assertion may change.
 
@@ -126,8 +129,8 @@ next amendment with no launch.
 cases, output digests must be bit-identical and neither the P1 band evaluator nor the v2.11 P2 wall
 evaluator may be called. Diff confinement is mandatory: kernel hunks may occur only inside
 `root_localize`, inside the new band-evaluator function, inside the new `v212_preflight_controls`,
-inside `v211_preflight_controls` solely for the delegated V211-C1
-terminal-reason and bracket-endpoint assertions, as
+inside `v211_preflight_controls` solely for the delegated V211-C1 outcome assertions (terminal-reason,
+unresolved-outcome, and bracket containment), as
 exactly one invocation line added to the existing preflight control sequence, or as exactly one
 module-level constant addition per kernel lineage, `ROOT_GT_CLAMP_TAU = Fraction(255, 256)`,
 placed adjacent to the existing `ROOT_GL_CORNER_TAU` definition and modifying no existing line. Gating hunks may occur
