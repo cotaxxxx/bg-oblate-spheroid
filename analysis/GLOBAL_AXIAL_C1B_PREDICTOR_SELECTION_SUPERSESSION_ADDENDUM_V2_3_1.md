@@ -1,0 +1,5 @@
+# C1b predictor selection supersession addendum v2.3.1
+
+Status: `PREDECLARED_ADDENDUM / IMPLEMENTATION_NOT_STARTED / MACHINE_NOT_RUN / NOT_BINDING`
+
+The v2.3 predictor-selection rule in `analysis/GLOBAL_AXIAL_C1B_PREDICTOR_SELECTION_ADDENDUM_V2_3.md` explicitly supersedes, and is the sole binding replacement for, the prior continuation-versus-scan tolerance rule `|t_cont-t_scan| <= 1/64` in `analysis/GLOBAL_AXIAL_C1B_PREDICTOR_PRE_RUN_AMENDMENT.md` (commit `002cf89b36f045863e72e9993006e381f9f79bf5`, blob `c785ceda99946bfc36d9f93dcdbb78b68352cbf1`), and therefore the v2.1 §E statement that the predictor remains unchanged is modified only at this one selection-tolerance point while the three-stage ladder and every other predictor obligation remain unchanged; correspondingly, correction raw-audit item 12 additionally requires the diff to identify removal of the old `1/64` continuation-versus-scan comparison from both producer and checker implementations, with no dead or alternate code path retaining that superseded rule.
