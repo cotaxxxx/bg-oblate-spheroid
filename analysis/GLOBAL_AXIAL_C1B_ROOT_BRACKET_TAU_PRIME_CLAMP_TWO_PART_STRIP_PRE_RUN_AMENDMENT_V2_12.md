@@ -52,6 +52,8 @@ P1 and P2 results. P1 records tau-prime, tau, the exact 16 t-cell endpoints and 
 label, wall-panel count, work and PASS/FAIL. P2 preserves the v2.11 section-3 certificate fields and
 values, including its exact tau, receipts, G_tau enclosure, wall statistics, work and PASS/FAIL.
 
+All exact rational fields of the certificate payload (tau_prime, tau, P1 cell endpoints, and any P2 rational fields) are recorded as canonical fraction strings by calling `persistence.rational_text`, matching the existing ledger convention for lambda endpoints. Hand-written numerator/denominator formatting is prohibited. This conversion occurs only while constructing the persisted certificate payload; module-level numerical constants remain `Fraction` objects and are not converted.
+
 ## 2. Two-part strip certificate and mathematical authorization
 
 The removed strip `[tau-prime,1]` is certified as the union of two pieces.
@@ -157,6 +159,8 @@ sweep-top coarse-139 lambda slab `[499/800,5/8]`. All 16 enclosures must
 be finite with strictly negative upper bounds; any other result FAILS
 preflight. The 16 enclosures are pinned verbatim in the acceptance
 receipt.
+
+**V212-C6 — A.2 write-through, both paths.** This control is hard-fail in both lineages and exercises production persistence on both certificate outcomes. (a) PASS path: take the V212-C1 replay result, build the full slab record through the production record builder, serialize it through the production canonical-bytes path to a file under `C1B_PREFLIGHT_RECORD_DIR`, require no exception, require every exact rational certificate field (including tau and all P1/P2 rational fields) to be a canonical fraction string, and require JSON-load round-trip equality; print PASS/FAIL and byte length. (b) FAIL path: following the V211-C3 precedent, synthetically force P2 FAIL by injecting a wall result with `G_tau.upper() >= 0`, obtain the step-0 early-return record whose certificate is `{"P1": None, "P2": p2, "pass": False}`, and pass the resulting full slab record through the same production builder and canonical-bytes/file/round-trip path with the same rational-string checks; print the round-tripped tau string as evidence. No additional evaluator work is charged. (c) Before either path, assert `type(ROOT_GT_CLAMP_TAU) is Fraction` and `type(ROOT_GL_CORNER_TAU) is Fraction`, and print the successful type check.
 
 ## 6. Required implementation and acceptance sequence
 
