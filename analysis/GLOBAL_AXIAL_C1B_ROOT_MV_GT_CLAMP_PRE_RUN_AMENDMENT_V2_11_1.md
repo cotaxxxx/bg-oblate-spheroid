@@ -37,7 +37,11 @@ Control additions are outside the three changes and expressly permitted:
 each kernel lineage adds one new function v2111_preflight_controls()
 implementing the section-4 controls, plus exactly one invocation line
 appended to the existing preflight control sequence. These additions are
-pure: no existing function body, constant, or control changes.
+pure: no existing function body, constant, or control changes, except
+the V211-C1 terminal-reason assertion amendment specified by correction
+v2.11.1-C2 (fail-closed termination with reason
+GT_DIVISION_GUARD_UNRESOLVED or MV_EVAL_UNRESOLVED; all other V211-C1
+assertions, including strip-certificate PASS, unchanged).
 
 Non-activated boxes remain bit-identical to v2.11 (the edits of (i) are
 reachable only under the activation condition; (ii) adds a key only when a
@@ -75,19 +79,26 @@ estimates() formulas.
 C1 (historical replay): replay coarse 105 / depth 3 with the historical
 bracket lo = 481429049247/549755813888 and the fifth-run tube context.
 Required: certificate PASS with tau exact; every step-1 Gt cell satisfies
-t_cell[1] <= tau; and the outcome is one of the two predeclared lawful
-outcomes: (a) the division guard resolves (finite N_k and a computed T_next),
-or (b) GT_DIVISION_GUARD_UNRESOLVED with the worst step-1 Gt upper bound
-strictly smaller than the fifth-run value. Any other outcome FAILS. The
-achieved outcome (a or b, with the measured values) is pinned verbatim in
-the acceptance receipt.
+t_cell[1] <= tau; and the outcome is one of the three predeclared lawful
+outcomes: (a) the division guard resolves (finite N_k and a computed T_next);
+(b) GT_DIVISION_GUARD_UNRESOLVED with the worst step-1 Gt upper bound
+strictly smaller than the fifth-run value; or (c) every clamped step-1 Gt
+cell passes the division guard (worst step-1 Gt upper bound recorded,
+strictly negative) and the attempt terminates fail-closed with
+MV_EVAL_UNRESOLVED (the MV step index and the terminating enclosure
+recorded). Any other outcome FAILS. The achieved outcome (a, b, or c,
+with the measured values) is pinned verbatim in the acceptance receipt.
+Outcome (a) is the only outcome that authorizes the sixth Phase-1
+launch; (b) or (c) routes to the next amendment with no launch.
 
 C2 (bit-identity and confinement): (a) non-activated boxes reproduce v2.11
 outputs bit-for-bit (digest comparison on the v2.11 C2 cases; the wall
 evaluator must not be called); (b) diff confinement: kernel hunks lie inside root_localize, inside the
-new function v2111_preflight_controls, or are the single invocation line
-in the existing preflight control sequence; gating hunks lie inside the
-slab-record builder. No other function is touched, and the control
+new function v2111_preflight_controls, inside v211_preflight_controls
+(confined to the V211-C1 terminal-reason assertion, correction
+v2.11.1-C2), or are the single invocation line in the existing preflight
+control sequence; gating hunks lie inside the slab-record builder. No
+other function is touched, and apart from that assertion the control
 additions modify no existing line.
 
 C3 (A.2 recording and schema purity): after C1, the in-memory slab record
