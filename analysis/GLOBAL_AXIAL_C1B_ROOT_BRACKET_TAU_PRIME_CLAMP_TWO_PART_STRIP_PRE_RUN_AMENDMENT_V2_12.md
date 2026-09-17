@@ -9,9 +9,16 @@ corrections `572a84a1` and `892a846d`. The implemented v2.11 machinery remains t
 Evidence basis is limited to the pinned fifth-run ledger/stdout evidence already referenced by the
 frozen v2.11/v2.11.1 documents: the terminal attempt is coarse 105 / depth 3, with
 `ROOT:GT_DIVISION_GUARD_UNRESOLVED`, after the v2.11 corner certificate passed three times. The
-sealed ledger is `b0481804...e54a`. That evidence also shows the axial Gt enclosure changes sign
-before the corner, so the division guard cannot be repaired by endpoint subdivision while retaining
-the bracket through tau = 65535/65536. A smaller certified root bracket is therefore required.
+sealed ledger is `b0481804...e54a`. In that ledger the step-1 Gt cells 0..14 have strictly negative upper
+bounds, while the failure is confined to the t=1-touching cell 15
+(`t_cell = [8727766257567/8796093022208, 1]`) and its t=1-touching k=2
+ladder children, whose enclosures straddle zero at every recorded level.
+DIAGNOSTIC_ONLY probing further indicates the axial Gt is genuinely
+positive on an interval strictly below t=1, so no endpoint subdivision
+that retains the bracket through tau = 65535/65536 can repair the guard;
+this motivates, but does not certify, a smaller root bracket. The
+runtime certificate of section 2 carries the entire certification
+burden.
 
 PROBE1--PROBE4 are `DIAGNOSTIC_ONLY / NOT_EVIDENCE`. They motivate the design and fixed constants
 below but are not cited as certification evidence. In particular, they do not substitute for the
@@ -24,6 +31,9 @@ Define `ROOT_GT_CLAMP_TAU = 255/256` (tau-prime). When `hi == T_HI` and
 after the two-part strip certificate in section 2 PASSES. Under activation, every MV step, including
 step 1, partitions both Gt and Gl cells only over `[lo, ROOT_GT_CLAMP_TAU]`. The
 `first_step_gt_hi` mechanism is removed. This is the v2.12 successor to v2.11.1 scope item (i).
+If `hi == T_HI` but `lo >= ROOT_GT_CLAMP_TAU`, there is no activation
+and no clamp; the attempt proceeds under the existing unchanged guards
+and fails closed if they cannot be established.
 
 Add one lineage-local band-wall evaluator for P1. It evaluates the existing corner-regular wall
 density over `[tau-prime,tau]`, where `tau = ROOT_GL_CORNER_TAU = 65535/65536`, using exactly 16
