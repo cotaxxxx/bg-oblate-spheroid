@@ -1,6 +1,6 @@
 name: Meridian transverse coarse diagnostic launcher
 
-"on":
+on:
   workflow_dispatch:
 
 jobs:
