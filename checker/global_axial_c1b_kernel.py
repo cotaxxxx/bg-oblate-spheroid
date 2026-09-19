@@ -292,7 +292,7 @@ def _root_gl_corner_certificate(slab, context):
             record["G_tau"] = _arb_snapshot(value)
             record["pass"] = bool(value.upper() < 0)
         return bool(record["pass"]), record, int(work)
-    except (REndpointDomainGuard, ValueError, ZeroDivisionError) as exc:
+    except (REndpointDomainGuard, ValueError, ZeroDivisionError, BoxLocalGuard) as exc:
         record["detail"] = str(exc)
         return False, record, ROOT_GL_CORNER_WALL_PANELS
 
@@ -1133,7 +1133,7 @@ def tube_stage(slab, tc, stage):
             nonfinite.append(_nonfinite_record("R_ENDPOINT_DOMAIN_GUARD", "g_box", "LEFT", label,
                                               slab.depth, tm, tm, ll, lr, str(exc)))
             v, good = None, False
-        except (ValueError, ZeroDivisionError):
+        except (ValueError, ZeroDivisionError, BoxLocalGuard):
             v, good = None, False
         guards.append((label, "LEFT", tm, tm, ll, lr, bool(good)))
         left_bad += 0 if good else 1
@@ -1149,7 +1149,7 @@ def tube_stage(slab, tc, stage):
                 nonfinite.append(_nonfinite_record("R_ENDPOINT_DOMAIN_GUARD", "g_box", "RIGHT", label,
                                                   slab.depth, tp, tp, ll, lr, str(exc)))
                 v, good = None, False
-            except (ValueError, ZeroDivisionError):
+            except (ValueError, ZeroDivisionError, BoxLocalGuard):
                 v, good = None, False
             guards.append((label, "RIGHT", tp, tp, ll, lr, bool(good)))
             right_bad += 0 if good else 1
@@ -1240,7 +1240,7 @@ def root_localize(slab, tm, tp, cert_context=None):
                 finite=_arb_bounds_finite(v); guard=bool(finite and v.upper()<0)
                 cells.append({"t_cell":(a,b),"enclosure":_arb_snapshot(v) if finite else None,"wall_stats":dict(stats),"work":cw,"guard":guard})
                 if not guard: p1_ok=False; break
-            except (REndpointDomainGuard, ValueError, ZeroDivisionError) as exc:
+            except (REndpointDomainGuard, ValueError, ZeroDivisionError, BoxLocalGuard) as exc:
                 p1_work += ROOT_GL_CORNER_WALL_PANELS; cells.append({"t_cell":(a,b),"detail":str(exc),"work":ROOT_GL_CORNER_WALL_PANELS,"guard":False}); p1_ok=False; break
         work += p1_work
         certificate["P1"]={"tau_prime":ROOT_GT_CLAMP_TAU,"tau":ROOT_GL_CORNER_TAU,"evaluator":"root_gl_corner_band_box","panels":ROOT_GL_CORNER_WALL_PANELS,"cells":cells,"work":p1_work,"pass":p1_ok}
@@ -1329,7 +1329,7 @@ def root_localize(slab, tm, tp, cert_context=None):
             print("C1B_ROOT_NONFINITE", slab.coarse, slab.depth, step, "kind",
                   "R_ENDPOINT_DOMAIN_GUARD", "detail", str(exc))
             break
-        except (ValueError, ZeroDivisionError):
+        except (ValueError, ZeroDivisionError, BoxLocalGuard):
             reason = "MV_EVAL_UNRESOLVED"
             break
         Gpar = G0 + Gl * dlambda
@@ -1478,7 +1478,7 @@ def eval_exterior(boxes, panels, label, tm, tp, mono_work, depth):
             nonfinite.append(_nonfinite_record("R_ENDPOINT_DOMAIN_GUARD", "g_box", box.side, label,
                                               depth, box.tl, box.tr, box.ll, box.lr, str(exc)))
             value, good = None, False
-        except (ValueError, ZeroDivisionError):
+        except (ValueError, ZeroDivisionError, BoxLocalGuard):
             value, good = None, False
         sign_guards.append((label, box.side, box.tl, box.tr, box.ll, box.lr, bool(good)))
         (resolved if good else unresolved).append(box)
@@ -1510,7 +1510,7 @@ def eval_exterior(boxes, panels, label, tm, tp, mono_work, depth):
             nonfinite.append(_nonfinite_record("R_ENDPOINT_DOMAIN_GUARD", "mono_closure_box", box.side+"_MONO",
                                               label, depth, box.tl, box.tr, box.ll, box.lr, str(exc)))
             closed, gt, wall = False, None, None
-        except (ValueError, ZeroDivisionError):
+        except (ValueError, ZeroDivisionError, BoxLocalGuard):
             closed, gt, wall = False, None, None
         mono_guards.append((label, box.side + "_MONO", box.tl, box.tr, box.ll, box.lr, bool(closed)))
         if gt is not None and (worst_gt is None or gt.upper() > worst_gt): worst_gt = gt.upper()
