@@ -5,13 +5,14 @@ from fractions import Fraction
 from math import comb,isqrt
 from flint import arb,ctx
 class VerificationError(RuntimeError): pass
+class BoxLocalGuard(VerificationError): pass
 
 def _point(x): return arb(x.numerator)/x.denominator if isinstance(x,Fraction) else arb(x)
 def _box(lo,hi): return arb((lo+hi)/2,(hi-lo)/2)
 def _clamp_nonnegative(x): return _box(max(arb(0),x.lower()),max(arb(0),x.upper()))
 def _unit_hull(x):
     lo=max(arb(0),x.lower()); hi=min(arb(1),x.upper())
-    if hi<lo: raise VerificationError("empty unit intersection")
+    if hi<lo: raise BoxLocalGuard("empty unit intersection")
     return _box(lo,hi)
 def _square(x):
     lo,hi=x.lower(),x.upper()
@@ -27,7 +28,7 @@ def _zero_to_upper(x):
 def _sqrt_hull_nonnegative(x):
     hi=max(arb(0),x.upper()).sqrt(); return _box(arb(0),hi)
 def _series(u,name,degree):
-    if not u.upper()<1: raise VerificationError(f"{name} requires u<1")
+    if not u.upper()<1: raise BoxLocalGuard(f"{name} requires u<1")
     p=arb(0)
     if name=="Psi":
         for n in range(degree+1):
@@ -51,16 +52,16 @@ def _corner(s,t,lam):
     return (-4*mu*R*lam*_pow(rho,3)*H/w-2*Rg*lam2*H*H*Ahat*_pow(rho,5)/w2-2*R*lam3*Ahat*_pow(rho,3)*(3*phi*H-gap*sqrtq)/w),"corner_hull"
 def _ordinary(s,t,lam,degree):
     e,gap,mu,d,lam2,A,q,w2,w,ht,H=_quantities(s,t,lam)
-    if not q.lower()>0: raise VerificationError("ordinary q is not positive")
+    if not q.lower()>0: raise BoxLocalGuard("ordinary q is not positive")
     sq=q.sqrt(); gamma=_unit_hull(lam*A/(w*sq)); u0=_unit_hull(_clamp_nonnegative(e*gap*_square(ht)/(w2*q)))
     glo=max(arb(0),gamma.lower()); ghi=min(arb(1),gamma.upper()); ulo=max(u0.lower(),arb(1)-ghi*ghi); uhi=min(u0.upper(),arb(1)-glo*glo)
-    if uhi<ulo: raise VerificationError("inconsistent gamma/u enclosures")
+    if uhi<ulo: raise BoxLocalGuard("inconsistent gamma/u enclosures")
     u=_box(ulo,uhi); gc_lo=max(arb(0),arb(1)-u.upper()).sqrt(); gc_hi=max(arb(0),arb(1)-u.lower()).sqrt(); g2lo=max(gamma.lower(),gc_lo); g2hi=min(gamma.upper(),gc_hi)
-    if g2hi<g2lo: raise VerificationError("empty reciprocal gamma/u intersection")
+    if g2hi<g2lo: raise BoxLocalGuard("empty reciprocal gamma/u intersection")
     gamma=_box(g2lo,g2hi)
     use_u=_contains_zero(ht) or not u.lower()>0
     if use_u:
-        if not u.upper()<1: raise VerificationError("upper chart u reaches one")
+        if not u.upper()<1: raise BoxLocalGuard("upper chart u reaches one")
         R=_series(u,"Psi",degree); Rg=-2*gamma*_series(u,"Psi_prime",degree); chart="u_upper"
     else:
         R=gamma.acos()/u.sqrt(); Rg=(gamma*R-1)/u; chart="gamma_lower"

@@ -4,35 +4,35 @@ from __future__ import annotations
 from fractions import Fraction
 from flint import arb,ctx
 from checker.monotone_tube_interval_checker import (
-    VerificationError,_point,_box,_square,_pow,_series,_quantities,_corner,_split,_s_partition
+    VerificationError,BoxLocalGuard,_point,_box,_square,_pow,_series,_quantities,_corner,_split,_s_partition
 )
 U_STAR=Fraction(3,5)
 
 def _inter(x,y):
     lo=max(x.lower(),y.lower()); hi=min(x.upper(),y.upper())
-    if hi<lo: raise VerificationError("empty interval intersection")
+    if hi<lo: raise BoxLocalGuard("empty interval intersection")
     return _box(lo,hi)
 
 def _unit(x):
     lo=max(arb(0),x.lower()); hi=min(arb(1),x.upper())
-    if hi<lo: raise VerificationError("empty unit intersection")
+    if hi<lo: raise BoxLocalGuard("empty unit intersection")
     return _box(lo,hi)
 
 def _ordinary_refinement(s,t,lam):
     e,gap,mu,d,lam2,A,q,w2,w,ht,H=_quantities(s,t,lam)
-    if not q.lower()>0: raise VerificationError("ordinary q not positive")
+    if not q.lower()>0: raise BoxLocalGuard("ordinary q not positive")
     A=_inter(A,(1-t)+t*e); sq=q.sqrt(); gamma=_unit(lam*A/(w*sq)); u0=_unit(e*gap*_square(ht)/(w2*q))
     glo=max(arb(0),gamma.lower()); ghi=min(arb(1),gamma.upper()); ulo=max(u0.lower(),arb(1)-ghi*ghi); uhi=min(u0.upper(),arb(1)-glo*glo)
-    if uhi<ulo: raise VerificationError("inconsistent gamma/u")
+    if uhi<ulo: raise BoxLocalGuard("inconsistent gamma/u")
     u=_box(ulo,uhi); gc_lo=max(arb(0),arb(1)-u.upper()).sqrt(); gc_hi=max(arb(0),arb(1)-u.lower()).sqrt(); gamma=_inter(gamma,_box(gc_lo,gc_hi))
     lam3=lam2*lam; rho=s/sq; phi=d/sq; Ahat=A/sq
     def terms(R,Rg):
         return (-4*mu*R*lam*_pow(rho,3)*H/w,-2*Rg*lam2*H*H*Ahat*_pow(rho,5)/w2,-2*R*lam3*Ahat*_pow(rho,3)*(3*phi*H-gap*sq)/w)
     def upper_terms():
-        if not u.upper()<1: raise VerificationError("u chart invalid")
+        if not u.upper()<1: raise BoxLocalGuard("u chart invalid")
         R=_series(u,"Psi",50); P=_series(u,"Psi_prime",50); return terms(R,-2*gamma*P)
     def lower_terms():
-        if not u.lower()>0: raise VerificationError("gamma chart invalid")
+        if not u.lower()>0: raise BoxLocalGuard("gamma chart invalid")
         R=gamma.acos()/u.sqrt(); return terms(R,(gamma*R-1)/u)
     th=_point(U_STAR)
     if u.upper()<=th: return "u_upper",upper_terms()
@@ -42,7 +42,7 @@ def _ordinary_refinement(s,t,lam):
         a,b=upper_terms(),lower_terms(); return "intersection",tuple(_inter(x,y) for x,y in zip(a,b))
     if uok: return "u_upper_cross_only",upper_terms()
     if gok: return "gamma_lower_cross_only",lower_terms()
-    raise VerificationError("crossing cell has no valid chart")
+    raise BoxLocalGuard("crossing cell has no valid chart")
 
 def verify(record):
     expected={"t_domain":["63/64","1"],"lambda_domain":["5/8","33/50"],"t_boxes":8,"lambda_boxes":8,"s_panels":1024,"series_degree":50,"bits":160,"u_star":"3/5","required_sign":"NEG","sole_gate":"every parameter-box total.upper() < 0"}

@@ -20,6 +20,7 @@ from checker import global_axial_c0_checker as base
 from checker import c0a_four_group_v2 as grouped
 from checker.monotone_tube_refinement_checker import _ordinary_refinement as _gt_ordinary
 from checker.monotone_tube_interval_checker import _corner as _gt_corner
+from checker.monotone_tube_interval_checker import BoxLocalGuard
 from checker.global_axial_c1b_endpoint_r import (
     REndpointDomainGuard, _R_endpoint_safe,
 )
@@ -1022,7 +1023,7 @@ def _tube_gt_eval(slab, label, tl, tr, ll, lr, panels, nonfinite, charge_on_fail
         nonfinite.append(_nonfinite_record("R_ENDPOINT_DOMAIN_GUARD", "gt_box", "GT", label,
                                           slab.depth, tl, tr, ll, lr, str(exc)))
         return None, {}, panels if charge_on_failure else 0, False
-    except (ValueError, ZeroDivisionError):
+    except (ValueError, ZeroDivisionError, BoxLocalGuard):
         return None, {}, panels if charge_on_failure else 0, False
 
 
