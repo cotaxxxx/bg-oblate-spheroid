@@ -91,7 +91,7 @@ So `mu_0` is a minimum and the maximum is at `mu = ±1`. With `a·1 + L = 1`, th
 
 *Remark (sharpness not claimed).* The step `(1-mu^2)/q <= 1` is lossy: at `mu = ±1` the true value is `u = 0` while the majorant `f` is maximal. Lemma 5 gives an explicit uniform bound strictly below 1, not the supremum of `u`.
 
-*Remark (two distinct roles).* The value `u = 0` occurs on `B'` — at `mu = ±1` and on the interior locus `mu_0` — and is the removable singularity of `Psi`, handled in §3.3 by analytic continuation. The endpoint `u = 1` is the singular endpoint of the `u`-derivative representation of `Psi`; Lemma 5 keeps `B` uniformly inside `[0,1)`. The two facts serve different purposes.
+*Remark (two distinct roles).* The value `u = 0` occurs on `B'` — at `mu = ±1` and on the interior locus `mu_0` — and is the removable singularity of `Psi`, handled in §3.3 by analytic continuation. The endpoint `u = 1` is the singular endpoint of the `u`-derivative representation of `Psi`; Lemma 5 keeps `B'` uniformly inside `[0,1)`. The two facts serve different purposes.
 
 *Remark.* The interval implementation switches charts at `u = 3/5`. That is a numerical policy of the producer and plays no role here; only `u_max < 1` is used.
 
@@ -163,7 +163,7 @@ A_t = -mu,    A_tt = 0,
 q_t = 2 lambda^2 (t-mu),    q_tt = 2 lambda^2,    q_ttt = 0.
 ```
 
-Repeated application of the product and chain rules therefore expresses each `partial_t^k gamma`, `1 <= k <= 4`, as a finite sum of products of bounded polynomial factors in `(mu,t,lambda)`, the bounded factor `lambda/w`, and negative half-integer powers of `q`. On the compact parameter box, Lemmas 3–4 give
+Repeated application of the product and chain rules therefore expresses each `partial_t^k gamma`, `1 <= k <= 4`, as a finite sum of products of bounded polynomial factors in `(mu,t,lambda)`, the bounded factor `lambda/w`, and negative half-integer powers of `q`. On the compact parameter box, Lemmas 3–4 and the definition of `B'` give
 
 ```
 q >= 25/65536,    w >= 5/8,    lambda <= 33/50,
