@@ -123,3 +123,13 @@ which supplies the analytic bridge from the third-`t`-derivative sign to strict 
 Neither dependency is promoted by this pre-run contract. Until their respective audit conditions are discharged, a later C1d assembly must carry both in its `conditional_on`.
 
 This contract does not certify the upper band `[31/32,1]`, the endpoint limit at `t=1`, off-axis roots, or any global no-fold statement.
+
+## §10 Implementation binding and execution provenance
+
+**Implementation.** The driver is implemented in a single commit whose immediate parent is the commit freezing this contract; no rebase, amend, or intervening commit. That commit may add the driver and its tests; it must not modify the evaluator blobs of §5 or the artifacts of §9. Before the production run, the implementation commit receives a chat raw audit of the full text of every added or changed file, bound by blob SHA-1, and the §8.2 controls are run through it.
+
+**Execution.** The production run uses a new run directory and records, before the first node and after the last: the exact HEAD (the implementation commit or a pins-only direct child of it), an empty `git status --porcelain`, the blob SHA-1 of the driver and of both evaluators, the interpreter path and version, the python-flint version, and the CPU description. Any mismatch between the two records, or between them and the pins, makes the run `NOT_EVIDENCE` regardless of its numerical outcome.
+
+**Ledger.** The producer ledger is append-only JSON lines with a SHA-256 hash chain. Resumption is permitted only with identical pins and an intact chain; otherwise a new run directory is required. On completion the ledger is sealed as a mode-444 copy with its SHA-256 recorded, and the checker takes the sealed ledger as its only input.
+
+**Order.** Roots are processed in increasing `j`, and within each `j` in increasing `k`.
