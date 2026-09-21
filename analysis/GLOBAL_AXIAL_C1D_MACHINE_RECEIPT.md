@@ -31,6 +31,11 @@ Rejected candidates (not evidence; preserved as local branches):
     C4 did not exercise the production record.
   d49c439d (rejected/c1d-driver-d49c439d): production run c1d_producer_20260921T055540Z
     ended ABORT at its first evaluation on a None stats entry. That run is not evidence.
+  57643a6 (rejected/c1d-driver-57643a6): differs from 3fdc0e89 by one line in each driver
+    (import_closure did not skip module __file__ values beginning with "<"); committed at
+    15:35:48 +0900 and superseded by 3fdc0e89 at 15:37:08 +0900. No run was made with it.
+    It was not reported to the chat audit when superseded and is recorded here after
+    discovery in the branch listing.
 
 ## 3. Producer run
 
