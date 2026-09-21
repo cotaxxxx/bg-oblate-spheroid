@@ -181,7 +181,7 @@ so every such term is uniformly bounded. Taking the maximum of the four resultin
 
 ### 3.6 Successive derivatives of the density
 
-From `A = 1 - t mu`, `A_t = -mu`. From `alpha = arccos(gamma)`,
+From `A = 1 - t mu`, `A_t = -mu`. For `u > 0`, differentiating `alpha = arccos(gamma)` gives
 
 ```
 alpha_t = -gamma_t / sqrt(1 - gamma^2) = -gamma_t / sqrt u,
@@ -192,6 +192,14 @@ so, with `C := R gamma_t` and `R = alpha/sqrt u`,
 ```
 (alpha^2)_t = 2 alpha alpha_t = -2 (alpha/sqrt u) gamma_t = -2 R gamma_t = -2 C.
 ```
+
+Extension to the locus `u = 0`. By Lemma 9, `alpha^2 = u R^2` is `C^infinity` in `t` on the whole box, so `(alpha^2)_t` is continuous there; and `R = Psi(u)`, `gamma_t` are continuous on the box by Lemma 6 and §3.4, so `-2C` is continuous there as well. The zero locus is exactly `mu = ±1` or `a mu + L t = 0`, by the factorization in Lemma 5; hence `{ u > 0 }` is dense in the box. Since `(alpha^2)_t` and `-2C` are continuous on the whole box and agree on `{ u > 0 }`, they agree everywhere by continuity. Thus
+
+```
+(alpha^2)_t = -2 C
+```
+
+holds throughout `B`.
 
 Differentiating `F = s A alpha^2` repeatedly, using `A_t = -mu` and `(alpha^2)_t = -2C`:
 
@@ -266,7 +274,7 @@ integral_0^1 partial_t g_axis_ob(ut,lambda) du = ( g_axis_ob(t,lambda) - g_axis_
 
 and `g_axis_ob(0,lambda) = 0` by Corollary 13. ∎
 
-*Remark.* The definition of `Phi~` is valid at `t = 0`; the quotient representation is not. `Phi~` is the analytic continuation of `g/t` through the origin, and it is `Phi~`, not the quotient, that is used below.
+*Remark.* The definition of `Phi~` is valid at `t = 0`; the quotient representation is not. `Phi~` is the extension of `g/t` through the origin, and it is `Phi~`, not the quotient, that is used below.
 
 **Lemma 15 (descent to `tau`).** `Phi~` is even in `t`; hence there is `Phi` with `Phi(tau,lambda) = Phi~(t,lambda)`, `tau = t^2`, defined for `tau` in `[0,1/4]`, and `Phi(0,lambda) = H_axis_ob(lambda)`.
 
