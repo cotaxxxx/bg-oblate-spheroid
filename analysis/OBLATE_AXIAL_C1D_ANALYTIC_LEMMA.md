@@ -81,7 +81,7 @@ is the form used below. Since `q = (1-mu^2) + lambda^2(mu-t)^2 >= 1-mu^2 >= 0`, 
 u <= f(mu) := (a mu + L t)^2 / (a mu^2 + L),      where w^2 = a mu^2 + L.
 ```
 
-Differentiating, `f'(mu) = 2 a L (a mu + L t)(1 - t mu) / (a mu^2 + L)^2`. On `B'`, `|t mu| <= 31/32` so `1 - t mu >= 1/32 > 0`; the only critical point is `mu_0 = -L t / a`, where `f = 0`. It lies in `(-1,1)` throughout `B`, since `L/a = lambda^2/(1-lambda^2)` is increasing in `lambda` and
+Differentiating, `f'(mu) = 2 a L (a mu + L t)(1 - t mu) / (a mu^2 + L)^2`. On `B'`, `|t mu| <= 31/32` so `1 - t mu >= 1/32 > 0`; the only critical point is `mu_0 = -L t / a`, where `f = 0`. It lies in `(-1,1)` throughout `B'`, since `L/a = lambda^2/(1-lambda^2)` is increasing in `lambda` and
 
 ```
 |L t / a| <= (31/32)(33/50)^2 / (1 - (33/50)^2) = (31/32)(1089/1411) = 33759/45152 < 1.
