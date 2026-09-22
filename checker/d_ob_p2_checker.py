@@ -36,6 +36,19 @@ def square(x):
         u=max(a*a,b*b)
         return u/2+arb(0,u/2)
     return join(a*a,b*b)
+def positive_power(x,k):
+    lo,hi=x.lower(),x.upper()
+    if not lo>0:raise ArithmeticError("positive power")
+    return join(lo**k,hi**k)
+def positive_product(x,y):
+    xl,xh=x.lower(),x.upper();yl,yh=y.lower(),y.upper()
+    if not (xl>0 and yl>0):raise ArithmeticError("positive product")
+    return join(xl*yl,xh*yh)
+def finite(x):
+    try:
+        x.lower().man_exp();x.upper().man_exp()
+        return True
+    except Exception:return False
 def rational(s):
     n,d=s.split("/"); return Q(int(n),int(d))
 def rtext(q): return f"{q.numerator}/{q.denominator}"
@@ -134,26 +147,33 @@ def analytic(g):
     x=direct(clip(g,Q(0),CUT)); y=ser(clip(g,CUT,Q(1)))
     return join(x[0],y[0]),join(x[1],y[1]),join(x[2],y[2])
 
-def Fder(r,z,mu,a,co,la,second):
+def Fder(r,z,mu,a,co,si,la,second):
     b=a*co
     w2=la*la*(1-square(mu))+square(mu)
     if w2.lower()<=0:raise ArithmeticError("w")
     w=w2.sqrt()
-    d2=square(a)-2*r*b+square(r)+square(la*mu-z)
+    d2=square(b-r)+square(a*si)+square(la*mu-z)
     if d2.lower()<=0:raise ArithmeticError("D")
     d=d2.sqrt(); h=la*(1-r*b)-z*mu
-    g=clip(h/(d*w),Q(0),Q(1)); R,Rg,u=analytic(g); G=u*R*R
-    gv=-la*b/(d*w)+h*(b-r)/(d**3*w)
-    if not second:return -la*b*G-2*h*R*gv
-    gvv=(-2*la*b*(b-r)-h)/(w*d**3)+3*h*square(b-r)/(w*d**5)
-    return 4*la*b*R*gv-2*h*(Rg*square(gv)+R*gvv)
+    dw=positive_product(d,w); d3w=positive_product(positive_power(d,3),w)
+    g=clip(h/dw,Q(0),Q(1)); R,Rg,u=analytic(g); G=u*R*R
+    gv=-la*b/dw+h*(b-r)/d3w
+    if not second:
+        out=-la*b*G-2*h*R*gv
+        if not finite(out):raise ArithmeticError("nonfinite integrand")
+        return out
+    wd3=positive_product(w,positive_power(d,3));wd5=positive_product(w,positive_power(d,5))
+    gvv=(-2*la*b*(b-r)-h)/wd3+3*h*square(b-r)/wd5
+    out=4*la*b*R*gv-2*h*(Rg*square(gv)+R*gvv)
+    if not finite(out):raise ArithmeticError("nonfinite integrand")
+    return out
 
 def K(C,B):
     mu,a,co,si,la=surface(C,B); lo,hi,z0,z1=B.physical(); z=interval(z0,z1)
     if B.kind()=="far":
         r=interval(lo,hi)
-        return (Fder(r,z,mu,a,co,la,False)-Fder(-r,z,mu,a,co,la,False))/(2*r)
-    return Fder(interval(-hi,hi),z,mu,a,co,la,True)
+        return (Fder(r,z,mu,a,co,si,la,False)-Fder(-r,z,mu,a,co,si,la,False))/(2*r)
+    return Fder(interval(-hi,hi),z,mu,a,co,si,la,True)
 
 def parse_cells(code):
     pos=0; leaves=[]
@@ -216,7 +236,7 @@ def check_leaf(B,obj):
         lo=B.physical()[0]; Bc=C1/ball(lo)*(Ap+Am)
     else:Bc=2*C2/ball(B.l0)*(4*PI*cutarea).sqrt()
     margin=L-Bc
-    if margin.lower()<=0:raise ValueError("nonpositive checker margin")
+    if not margin.lower()>0:raise ValueError("nonpositive checker margin")
     return len(cells),margin.lower().str(30)
 
 def initial_box(i,j,k):
