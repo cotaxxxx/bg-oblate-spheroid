@@ -63,6 +63,28 @@ def sq_nonnegative(x: arb) -> arb:
     return hull(lo * lo, hi * hi)
 
 
+def pos_pow(x: arb, k: int) -> arb:
+    lo, hi = x.lower(), x.upper()
+    if not lo > 0:
+        raise ValueError("pos_pow")
+    return hull(lo**k, hi**k)
+
+
+def pos_mul(x: arb, y: arb) -> arb:
+    xl, xh, yl, yh = x.lower(), x.upper(), y.lower(), y.upper()
+    if not (xl > 0 and yl > 0):
+        raise ValueError("pos_mul")
+    return hull(xl*yl, xh*yh)
+
+
+def finite_ball(x: arb) -> bool:
+    try:
+        x.lower().man_exp(); x.upper().man_exp()
+        return True
+    except Exception:
+        return False
+
+
 def width(x: arb) -> arb:
     return x.upper() - x.lower()
 
@@ -250,23 +272,30 @@ def chart(gamma: arb):
     return hull(Rd,Rs),hull(Rgd,Rgs),hull(ud,us)
 
 
-def kernel_point(rho: arb, z: arb, mu: arb, a: arb, cp: arb, lam: arb, second=False):
+def kernel_point(rho: arb, z: arb, mu: arb, a: arb, cp: arb, sp: arb, lam: arb, second=False):
     b=a*cp
     w2=lam*lam*(arb(1)-sq_nonnegative(mu))+sq_nonnegative(mu)
     if w2.lower() <= 0: raise ValueError("w2")
     w=w2.sqrt()
-    D2=sq_nonnegative(a)-2*rho*b+sq_nonnegative(rho)+sq_nonnegative(lam*mu-z)
+    D2=sq_nonnegative(b-rho)+sq_nonnegative(a*sp)+sq_nonnegative(lam*mu-z)
     if D2.lower() <= 0: raise ValueError("D2")
     D=D2.sqrt()
     h=lam*(arb(1)-rho*b)-z*mu
-    gamma=intersect(h/(D*w),Q(0),Q(1))
+    Dw=pos_mul(D,w)
+    D3w=pos_mul(pos_pow(D,3),w)
+    gamma=intersect(h/Dw,Q(0),Q(1))
     R,Rg,u=chart(gamma)
     G=u*R*R
-    gr=-lam*b/(D*w)+h*(b-rho)/(D*D*D*w)
+    gr=-lam*b/Dw+h*(b-rho)/D3w
     if not second:
-        return -lam*b*G-2*h*R*gr
-    grr=(-2*lam*b*(b-rho)-h)/(w*D**3)+3*h*sq_nonnegative(b-rho)/(w*D**5)
-    return 4*lam*b*R*gr-2*h*(Rg*sq_nonnegative(gr)+R*grr)
+        out=-lam*b*G-2*h*R*gr
+        if not finite_ball(out): raise ValueError("nonfinite kernel")
+        return out
+    wD3=pos_mul(w,pos_pow(D,3)); wD5=pos_mul(w,pos_pow(D,5))
+    grr=(-2*lam*b*(b-rho)-h)/wD3+3*h*sq_nonnegative(b-rho)/wD5
+    out=4*lam*b*R*gr-2*h*(Rg*sq_nonnegative(gr)+R*grr)
+    if not finite_ball(out): raise ValueError("nonfinite kernel")
+    return out
 
 
 def kernel(cell: Cell, B: PBox, column):
@@ -276,13 +305,13 @@ def kernel(cell: Cell, B: PBox, column):
     if column=="far":
         rp=boxq(rlo,rhi)
         rm=-rp
-        fp=kernel_point(rp,z,mu,a,cp,lam,False)
-        fm=kernel_point(rm,z,mu,a,cp,lam,False)
+        fp=kernel_point(rp,z,mu,a,cp,sp,lam,False)
+        fm=kernel_point(rm,z,mu,a,cp,sp,lam,False)
         den=2*rp
         if den.lower() <= 0: raise ValueError("rho denominator")
         return (fp-fm)/den
     rs=boxq(-rhi,rhi)
-    return kernel_point(rs,z,mu,a,cp,lam,True)
+    return kernel_point(rs,z,mu,a,cp,sp,lam,True)
 
 
 def classify_and_bound(B: PBox, cells):
