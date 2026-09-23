@@ -2,6 +2,8 @@
 """Independent D-OB P2 certificate checker for sealed SPEC V2."""
 from __future__ import annotations
 import argparse, gzip, hashlib, json, math, multiprocessing as mp
+import os, fcntl, socket, signal, threading, time
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
@@ -260,29 +262,86 @@ def check_unit(item):
     except Exception as e:
         return {"ok":False,"initial":list(expected),"error":f"{type(e).__name__}: {e}"}
 
+def utc_now(): return datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+def checker_identity(cert):
+    return {"head":os.popen("git rev-parse HEAD").read().strip(),"checker_sha256":hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),"certificate_sha256":sha(cert)}
+def append_checker_ledger(path,rec):
+    with open(path,"ab",buffering=0) as f:
+        fcntl.flock(f,fcntl.LOCK_EX);f.write((json.dumps(rec,sort_keys=True,separators=(",",":"))+"\n").encode());os.fsync(f.fileno());fcntl.flock(f,fcntl.LOCK_UN)
+def load_checker_ledger(path,identity):
+    p=Path(path)
+    if not p.exists(): return {}
+    data=p.read_bytes()
+    if data and not data.endswith(b"\n"): raise SystemExit("CHECKER_LEDGER_TRAILING_PARTIAL_LINE")
+    rows=[json.loads(x) for x in data.splitlines()]
+    if not rows or rows[0]!={"record_type":"header","identity":identity}: raise SystemExit("CHECKER_LEDGER_IDENTITY_MISMATCH")
+    out={}
+    for r in rows[1:]:
+        if r.get("record_type")=="interruption": continue
+        if r.get("record_type")!="unit_complete": raise SystemExit("CHECKER_LEDGER_RECORD_TYPE")
+        k=tuple(r["initial"])
+        if k in out: raise SystemExit("CHECKER_LEDGER_DUPLICATE")
+        out[k]=r["result"]
+    return out
+def checker_lock(run):
+    p=run/"checker.LOCK"; payload={"pid":os.getpid(),"host":socket.gethostname(),"started_utc":utc_now()}
+    try: fd=os.open(p,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o644)
+    except FileExistsError:
+        try: old=json.loads(p.read_text())
+        except Exception: raise SystemExit("CHECKER_LOCK_INVALID")
+        if old.get("host")==socket.gethostname():
+            try: os.kill(int(old["pid"]),0)
+            except (ProcessLookupError,ValueError,KeyError): pass
+            else: raise SystemExit("CHECKER_LOCK_LIVE_WRITER")
+        p.unlink();fd=os.open(p,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o644)
+    with os.fdopen(fd,"w") as f: json.dump(payload,f,sort_keys=True);f.write("\n");f.flush();os.fsync(f.fileno())
+    return p
+
 def main():
     ap=argparse.ArgumentParser();ap.add_argument("--certificate",required=True);ap.add_argument("--report",required=True);ap.add_argument("--smoke",action="store_true")
+    ap.add_argument("--resume");ap.add_argument("--heartbeat-seconds",type=float,default=60.0)
     args=ap.parse_args();ctx.prec=BITS
     cert=Path(args.certificate); report=Path(args.report)
     result={"bits":BITS,"gamma_star":"5/8","certificate_sha256":sha(cert),"mode":"smoke" if args.smoke else "full","pass":False}
+    run=report.parent;run.mkdir(parents=True,exist_ok=True)
+    ledger=Path(args.resume) if args.resume else run/"checker_ledger.jsonl"
+    if ledger.parent.resolve()!=run.resolve(): raise SystemExit("CHECKER_LEDGER_OUTSIDE_RUN_DIR")
+    identity=checker_identity(cert)
+    if ledger.exists() and not args.resume: raise SystemExit("CHECKER_LEDGER_EXISTS_USE_RESUME")
+    saved=load_checker_ledger(ledger,identity) if args.resume else {}
+    if not ledger.exists():
+        ledger.write_text(json.dumps({"record_type":"header","identity":identity},sort_keys=True,separators=(",",":"))+"\n",encoding="utf-8")
+    lock=checker_lock(run);completed=0;stop=threading.Event()
+    def interrupted(signum,frame):
+        append_checker_ledger(ledger,{"record_type":"interruption","utc":utc_now(),"actor":f"signal:{signum}","pid":os.getpid()});raise SystemExit(128+signum)
+    signal.signal(signal.SIGTERM,interrupted);signal.signal(signal.SIGINT,interrupted)
+    def heartbeat():
+        while not stop.wait(args.heartbeat_seconds): print(f"CHECKER_HEARTBEAT completed_units={completed}",flush=True)
+    thread=threading.Thread(target=heartbeat,daemon=True);thread.start()
     try:
         records=[]
         with gzip.open(cert,"rt",encoding="utf-8") as f:
             for line in f:records.append(json.loads(line))
         expected=SMOKE if args.smoke else [(i,j,k) for i in range(8) for j in range(8) for k in range(4)]
         if len(records)!=len(expected):raise ValueError("record count")
-        leaves=cells=0
-        with mp.Pool(12) as pool:
-            for unit in pool.imap(check_unit,zip(records,expected)):
-                if not unit["ok"]:
-                    raise ValueError(f"initial {unit['initial']}: {unit['error']}")
+        units=[]; leaves=cells=0
+        for rec,exp in zip(records,expected):
+            if exp in saved:
+                unit=saved[exp];completed+=1
+                if not unit["ok"]:raise ValueError(f"initial {unit['initial']}: {unit['error']}")
                 leaves+=unit["leaves"];cells+=unit["cells"]
-        result.update(initial_boxes=len(expected),accepted_leaves=leaves,cells=cells)
-        result["pass"]=True
+            else: units.append((rec,exp))
+        with mp.Pool(12) as pool:
+            for unit in pool.imap(check_unit,units):
+                append_checker_ledger(ledger,{"record_type":"unit_complete","initial":unit["initial"],"result":unit});completed+=1
+                if not unit["ok"]: raise ValueError(f"initial {unit['initial']}: {unit['error']}")
+                leaves+=unit["leaves"];cells+=unit["cells"]
+        result.update(initial_boxes=len(expected),accepted_leaves=leaves,cells=cells);result["pass"]=True
     except Exception as e:
         result["error"]=f"{type(e).__name__}: {e}"
-    report.parent.mkdir(parents=True,exist_ok=True)
+    finally:
+        stop.set();thread.join(timeout=1);lock.unlink(missing_ok=True)
     with open(report,"w",encoding="utf-8",newline="\n") as f:json.dump(result,f,sort_keys=True,indent=2);f.write("\n")
-    print(json.dumps(result,sort_keys=True))
+    print(json.dumps(result,sort_keys=True),flush=True)
     return 0 if result["pass"] else 1
 if __name__=="__main__":raise SystemExit(main())

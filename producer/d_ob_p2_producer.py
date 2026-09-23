@@ -10,6 +10,12 @@ import math
 import multiprocessing as mp
 import os
 import sys
+import fcntl
+import socket
+import signal
+import threading
+import time
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from fractions import Fraction as Q
 from pathlib import Path
@@ -391,30 +397,125 @@ def box_obj(B: PBox, cells, data):
     }
 
 
+_LEDGER_PATH = None
+_RESUME = {}
+_COUNTER = None
+_IDENTITY = None
+
+def utc_now():
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+def file_sha(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+def runtime_identity():
+    return {
+        "head": os.popen("git rev-parse HEAD").read().strip(),
+        "producer_sha256": file_sha(__file__),
+        "spec_sha256": file_sha("analysis/D_OB_P2_CERTIFICATION_SPEC_V2.md"),
+        "correction_sha256": file_sha("analysis/D_OB_P2_RESUME_CORRECTION_PREDECLARE.md"),
+    }
+
+def node_key(index, B):
+    return "|".join([",".join(map(str,index))]+[qstr(x) for x in (B.r0,B.r1,B.t0,B.t1,B.l0,B.l1)])
+
+def append_ledger(record):
+    if _LEDGER_PATH is None:
+        return
+    line=(json.dumps(record,sort_keys=True,separators=(",",":"))+"\n").encode()
+    with open(_LEDGER_PATH,"ab",buffering=0) as f:
+        fcntl.flock(f,fcntl.LOCK_EX)
+        f.write(line); os.fsync(f.fileno())
+        fcntl.flock(f,fcntl.LOCK_UN)
+    if _COUNTER is not None and record.get("record_type")=="node_decision":
+        with _COUNTER.get_lock(): _COUNTER.value += 1
+
+def load_ledger(path, identity):
+    p=Path(path)
+    if not p.exists(): return {}
+    data=p.read_bytes()
+    if data and not data.endswith(b"\n"): raise SystemExit("LEDGER_TRAILING_PARTIAL_LINE")
+    records=[json.loads(x) for x in data.splitlines()]
+    if not records or records[0].get("record_type")!="header": raise SystemExit("LEDGER_HEADER_MISSING")
+    if records[0].get("identity")!=identity: raise SystemExit("LEDGER_IDENTITY_MISMATCH")
+    out={}
+    for rec in records[1:]:
+        if rec.get("record_type") not in ("node_decision","interruption","stale_lock_recovered"):
+            raise SystemExit("LEDGER_RECORD_TYPE")
+        if rec.get("record_type")=="node_decision":
+            key=rec.get("node_key")
+            if not key or key in out: raise SystemExit("LEDGER_DUPLICATE_NODE")
+            out[key]=rec
+    return out
+
+def init_worker(ledger_path,resume,counter,identity):
+    global _LEDGER_PATH,_RESUME,_COUNTER,_IDENTITY
+    _LEDGER_PATH=ledger_path; _RESUME=resume; _COUNTER=counter; _IDENTITY=identity
+
+def acquire_lock(run):
+    lock=run/"LOCK"
+    payload={"pid":os.getpid(),"host":socket.gethostname(),"started_utc":utc_now()}
+    try:
+        fd=os.open(lock,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o644)
+    except FileExistsError:
+        try: old=json.loads(lock.read_text())
+        except Exception: raise SystemExit("LOCK_INVALID")
+        if old.get("host")==socket.gethostname():
+            try: os.kill(int(old["pid"]),0)
+            except (ProcessLookupError,ValueError,KeyError): pass
+            else: raise SystemExit("LOCK_LIVE_WRITER")
+        lock.unlink()
+        fd=os.open(lock,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o644)
+        append_ledger({"record_type":"stale_lock_recovered","utc":utc_now(),"old":old})
+    with os.fdopen(fd,"w") as f: json.dump(payload,f,sort_keys=True); f.write("\n"); f.flush(); os.fsync(f.fileno())
+    return lock
+
 def solve_initial(index):
     ctx.prec=BITS
     ir,it,il=index
     root=PBox(Q(ir,8),Q(ir+1,8),Q(it,8),Q(it+1,8),
               Q(2,5)+Q(il,4)*Q(13,50), Q(2,5)+Q(il+1,4)*Q(13,50),0)
-    bits=[]; leaves=[]; unresolved=[]
+    bits=[]; leaves=[]; unresolved=[]; used_resume=[]
     def walk(B):
+        key=node_key(index,B)
+        saved=_RESUME.get(key)
+        if saved is not None:
+            used_resume.append(key)
+            decision=saved["decision"]
+            if decision=="accepted":
+                bits.append("0"); leaves.append(saved["leaf"]); return
+            if decision=="unresolved":
+                bits.append("0"); unresolved.append(B); return
+            if decision=="split":
+                bits.append("1")
+                for ch in B.split(): walk(ch)
+                return
+            raise RuntimeError("resume decision")
+        started=time.monotonic()
         col=B.column()
         if col=="straddle":
             if B.depth>=MAX_BOX_DEPTH:
-                bits.append("0"); unresolved.append(B); return
-            bits.append("1")
+                rec={"record_type":"node_decision","node_key":key,"node":[qstr(x) for x in (B.r0,B.r1,B.t0,B.t1,B.l0,B.l1)],"decision":"unresolved","panels":0,"elapsed_seconds":time.monotonic()-started}
+                append_ledger(rec); bits.append("0"); unresolved.append(B); return
+            rec={"record_type":"node_decision","node_key":key,"node":[qstr(x) for x in (B.r0,B.r1,B.t0,B.t1,B.l0,B.l1)],"decision":"split","panels":0,"elapsed_seconds":time.monotonic()-started}
+            append_ledger(rec); bits.append("1")
             for ch in B.split(): walk(ch)
             return
         result,data=refine_cells(B)
+        panels=len(result) if result is not None else len(data["regular"])+len(data["cut"])
         if result is not None:
-            bits.append("0"); leaves.append(box_obj(B,result,data)); return
+            leaf=box_obj(B,result,data)
+            rec={"record_type":"node_decision","node_key":key,"node":[qstr(x) for x in (B.r0,B.r1,B.t0,B.t1,B.l0,B.l1)],"decision":"accepted","panels":panels,"elapsed_seconds":time.monotonic()-started,"leaf":leaf}
+            append_ledger(rec); bits.append("0"); leaves.append(leaf); return
         if B.depth>=MAX_BOX_DEPTH:
-            bits.append("0"); unresolved.append(B); return
-        bits.append("1")
+            rec={"record_type":"node_decision","node_key":key,"node":[qstr(x) for x in (B.r0,B.r1,B.t0,B.t1,B.l0,B.l1)],"decision":"unresolved","panels":panels,"elapsed_seconds":time.monotonic()-started}
+            append_ledger(rec); bits.append("0"); unresolved.append(B); return
+        rec={"record_type":"node_decision","node_key":key,"node":[qstr(x) for x in (B.r0,B.r1,B.t0,B.t1,B.l0,B.l1)],"decision":"split","panels":panels,"elapsed_seconds":time.monotonic()-started}
+        append_ledger(rec); bits.append("1")
         for ch in B.split(): walk(ch)
     walk(root)
     return {"initial":[ir,it,il],"box_tree":"".join(bits),"leaves":leaves,
-            "unresolved":len(unresolved)}
+            "unresolved":len(unresolved),"used_resume":used_resume}
 
 
 def all_indices():
@@ -431,7 +532,7 @@ def write_certificate(results,outpath):
     with open(outpath,"wb") as raw:
         with gzip.GzipFile(filename="",mode="wb",fileobj=raw,mtime=0) as gz:
             for rec in results:
-                clean={k:v for k,v in rec.items() if k!="unresolved"}
+                clean={k:v for k,v in rec.items() if k not in ("unresolved","used_resume")}
                 gz.write((json.dumps(clean,sort_keys=True,separators=(",",":"))+"\n").encode())
 
 
@@ -440,27 +541,53 @@ def main():
     ap.add_argument("--run-dir",required=True)
     ap.add_argument("--workers",type=int,default=NWORKERS)
     ap.add_argument("--initial",action="append",help="smoke-only i,j,k restriction")
+    ap.add_argument("--resume",help="resume from append-only ledger")
+    ap.add_argument("--heartbeat-seconds",type=float,default=60.0)
     args=ap.parse_args()
     ctx.prec=BITS
     run=Path(args.run_dir); run.mkdir(parents=True,exist_ok=True)
-    indices=all_indices()
-    if args.initial:
-        indices=[tuple(map(int,s.split(","))) for s in args.initial]
-    if args.workers==1:
-        results=[solve_initial(i) for i in indices]
-    else:
-        with mp.Pool(args.workers) as pool:
-            results=list(pool.imap(solve_initial,indices))
-    cert=run/"certificate.jsonl.gz"
-    write_certificate(results,cert)
-    unresolved=sum(r["unresolved"] for r in results)
-    summary={"bits":BITS,"gamma_star":"7/10","initial_boxes":len(indices),
-             "accepted_leaves":sum(len(r["leaves"]) for r in results),
-             "unresolved":unresolved,"certificate_sha256":sha256(cert)}
-    with open(run/"producer_summary.json","w",encoding="utf-8",newline="\n") as f:
-        json.dump(summary,f,sort_keys=True,indent=2); f.write("\n")
-    print(json.dumps(summary,sort_keys=True))
-    return 0 if unresolved==0 else 1
+    ledger=Path(args.resume) if args.resume else run/"producer_ledger.jsonl"
+    if ledger.parent.resolve()!=run.resolve(): raise SystemExit("LEDGER_OUTSIDE_RUN_DIR")
+    identity=runtime_identity()
+    if ledger.exists() and not args.resume: raise SystemExit("LEDGER_EXISTS_USE_RESUME")
+    resume=load_ledger(ledger,identity) if args.resume else {}
+    if not ledger.exists():
+        ledger.write_text(json.dumps({"record_type":"header","identity":identity},sort_keys=True,separators=(",",":"))+"\n",encoding="utf-8")
+        with open(ledger,"rb") as f: os.fsync(f.fileno())
+    global _LEDGER_PATH,_RESUME,_COUNTER,_IDENTITY
+    _LEDGER_PATH=str(ledger); _RESUME=resume; _COUNTER=mp.Value("Q",0); _IDENTITY=identity
+    lock=acquire_lock(run)
+    def interrupted(signum, frame):
+        append_ledger({"record_type":"interruption","utc":utc_now(),"actor":f"signal:{signum}","pid":os.getpid()})
+        raise SystemExit(128+signum)
+    signal.signal(signal.SIGTERM,interrupted); signal.signal(signal.SIGINT,interrupted)
+    stop=threading.Event()
+    def heartbeat():
+        while not stop.wait(args.heartbeat_seconds):
+            print(f"HEARTBEAT completed_nodes={_COUNTER.value}",flush=True)
+    thread=threading.Thread(target=heartbeat,daemon=True); thread.start()
+    try:
+        indices=all_indices()
+        if args.initial: indices=[tuple(map(int,s.split(","))) for s in args.initial]
+        if args.workers==1:
+            results=[solve_initial(i) for i in indices]
+        else:
+            with mp.Pool(args.workers,initializer=init_worker,initargs=(str(ledger),resume,_COUNTER,identity)) as pool:
+                results=list(pool.imap(solve_initial,indices))
+        used={k for r in results for k in r["used_resume"]}
+        if used!=set(resume): raise SystemExit("LEDGER_NON_PREFIX_COMPATIBLE")
+        cert=run/"certificate.jsonl.gz"
+        write_certificate(results,cert)
+        unresolved=sum(r["unresolved"] for r in results)
+        summary={"bits":BITS,"gamma_star":"7/10","initial_boxes":len(indices),
+                 "accepted_leaves":sum(len(r["leaves"]) for r in results),
+                 "unresolved":unresolved,"certificate_sha256":sha256(cert)}
+        with open(run/"producer_summary.json","w",encoding="utf-8",newline="\n") as f:
+            json.dump(summary,f,sort_keys=True,indent=2); f.write("\n")
+        print(json.dumps(summary,sort_keys=True),flush=True)
+        return 0 if unresolved==0 else 1
+    finally:
+        stop.set(); thread.join(timeout=1); lock.unlink(missing_ok=True)
 
 
 if __name__=="__main__":
