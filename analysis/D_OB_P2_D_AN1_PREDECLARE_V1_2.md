@@ -222,7 +222,7 @@ D-AN-1 does **not** claim the corollary that the 7,662 numerical unresolved boxe
 
 D-AN-1 is a **paper-proof predeclare**. It contains no certification computation.
 
-D-AN-1 may be declared CLOSED only when T1's complete lemma chain L0–L3, including FT_q and QM as required internal nodes, is assembled on paper, every assumption/dependency is explicit, and chat full-proof audit passes. External Lemma V audit dependency must remain visible; if still pending, any closure language must remain conditional rather than silently upgrading T1 to an unconditional theorem.
+D-AN-1 may be declared CLOSED only when T1's complete lemma chain L0–L3 is assembled on paper, every assumption/dependency is explicit, and chat full-proof audit passes. External Lemma V audit dependency must remain visible; if still pending, any closure language must remain conditional rather than silently upgrading T1 to an unconditional theorem.
 
 For v1.2, the frozen DAG defines T1 assembly as `L0 + L1 + L2 + FT_q + QM + L3`; NP-T remains an independent analytic cross-check and its edge into L3 is optional.
 
