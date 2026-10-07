@@ -11,8 +11,10 @@ For `Q_+=rho E+B1 b`, at `(mu,b)=(m,rho)`,
 
 Exact second derivatives obey on the frozen box
 `|Q_bb|<=2`, `|Q_mumu|<=10`, `|Q_mub|<=7`.
-Taylor and `|b-rho|<=D_+`, `|mu-m|<=D_+/lambda<=5D_+/2` give
-`|Q_+|<50D_+^2`.
+Taylor's integral remainder and `|b-rho|<=D_+`, `|mu-m|<=D_+/lambda<=5D_+/2` give
+`|Q_+| <= (1/2)[2D_+^2+2*7*(5D_+/2)D_+ +10*(5D_+/2)^2]`
+`=41D_+^2<50D_+^2`.
+The segment from `(m,rho)` to `(mu,b)` stays in the frozen box, so the displayed Hessian sup bounds apply along the full Taylor segment.
 By symmetry `|Q_-|<50D_-^2`.
 
 Since `N_+ =-lambda^2(m-mu)Q_+` and similarly for minus,
@@ -44,7 +46,9 @@ Let `F=hG`. The audited azimuthal identity is
 After b-pair folding,
 `int_0^pi P/(rho wv^3)dphi=(1/(2rho))int_0^(2pi)F_rho(rho)dphi`.
 
-Azimuthal symmetry at `rho=0` gives `int F_rho(0)dphi=0`.
+At `rho=0`, `h_rho=-lambda b` and `gamma_rho=-lambda b/(wD)`, while `D` is independent of `b`. Hence `F_rho=h_rho G-2hR gamma_rho` is odd in `b`; under `phi -> phi+pi`, `b -> -b`, so `int_0^(2pi)F_rho(0)dphi=0`.
+
+For `p_t=(t rho,0,lambda m)`, `t<1` gives `t^2rho^2+m^2<1`, so `p_t` is an interior point. P1 Section 2 gives smooth interior differentiation, and `|F_rhorho|<=C2/D` is integrable; differentiation/integration is therefore justified for `t<1`. The endpoint `t=1` is measure zero in the t-integral.
 Thus, with `rho_t=t rho`,
 `int_0^pi P/(rho wv^3)dphi
  =(1/2)int_0^1 int_0^(2pi)F_rhorho(rho_t)dphi dt`.
@@ -63,7 +67,9 @@ Hence the integrated-equivalent pair-scale constant is
 `C_*=(9pi+8)/2`.
 With `dA/w=dmu dphi`, P1 Corollary 4.3 supplies uniform integrability over the swept family.
 
-This removes the artificial `1/rho` loss and passes through coincidence. It does not yet prove a small north/cap constant `U`; width and exact weights remain to be used.
+This majorant discards sign information. Under Contract 21 it is therefore restricted to an exact near-coincidence band to be specified in the later U construction; it must not be used as the north-side-wide or cap-wide U estimate. The far north region is to be treated with the symmetric `P/rho` form and W-11, retaining its algebraic structure.
+
+This removes the artificial `1/rho` loss and passes through coincidence. It does not yet prove a small north/cap constant `U`; the near-band width and the separate far-region/cap estimates remain OPEN.
 
 ## 6. Ledger
 
