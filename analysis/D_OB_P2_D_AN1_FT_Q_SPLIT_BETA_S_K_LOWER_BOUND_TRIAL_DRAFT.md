@@ -7,7 +7,7 @@
 ## 1. Split and units (W-13)
 
 Write `K=[-1,-1/4]`, `S_K=int_K int_0^pi -lambda^2 (m-mu) F W dphi dmu`, with `W=1/(w v^3)` and `F=Rbar(E S3+4 B1 q L_D)+b(DeltaR/rho)(4 rho^2 E L_D+B1 S3)`.
-Define `U_signed` as the signed contribution of the complementary mu-domain `(-1/4,1]`, partitioned into exterior south `(-1/4,mu_C)`, north `(mu_C,m)`, and cap `(m,1]`.
+Define `U_signed` as the **negative of the signed integral contribution** of the complementary mu-domain `(-1/4,1]`, partitioned into exterior south `(-1/4,mu_C)`, north `(mu_C,m)`, and cap `(m,1]`.
 Then **exactly** `H=(S_K-U_signed)/(2 pi lambda)`, and `|U_signed|<=U` implies `H>=(S_K,lb-U)/(2 pi lambda)` if `S_K>=S_K,lb`.
 This supersedes old `S=int_(-1)^mu_C ...` and old `U` (north+cap only). The enlarged `U` is OPEN. No c_FT is set.
 
