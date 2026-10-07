@@ -46,7 +46,7 @@ Let `F=hG`. The audited azimuthal identity is
 After b-pair folding,
 `int_0^pi P/(rho wv^3)dphi=(1/(2rho))int_0^(2pi)F_rho(rho)dphi`.
 
-At `rho=0`, `h_rho=-lambda b` and `gamma_rho=-lambda b/(wD)`, while `D` is independent of `b`. Hence `F_rho=h_rho G-2hR gamma_rho` is odd in `b`; under `phi -> phi+pi`, `b -> -b`, so `int_0^(2pi)F_rho(0)dphi=0`.
+At `rho=0`, `h_rho=-lambda b` and, from FT_q (5.1), `gamma_rho=-lambda b/(wD)+hb/(wD^3)`, while `D` and `h` are independent of `b`. Hence both `h_rho` and `gamma_rho` are odd in `b`, so `F_rho=h_rho G-2hR gamma_rho` is odd in `b`; under `phi -> phi+pi`, `b -> -b`, and therefore `int_0^(2pi)F_rho(0)dphi=0`.
 
 For `p_t=(t rho,0,lambda m)`, `t<1` gives `t^2rho^2+m^2<1`, so `p_t` is an interior point. P1 Section 2 gives smooth interior differentiation, and `|F_rhorho|<=C2/D` is integrable; differentiation/integration is therefore justified for `t<1`. The endpoint `t=1` is measure zero in the t-integral.
 Thus, with `rho_t=t rho`,
