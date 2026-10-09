@@ -1,0 +1,2 @@
+mu in [-1, -1/4]: min Bernstein coefficient = 13437063/230863520 (~0.058203) > 0
+CERTIFIED: G > 0 on the full box (1 mu-pieces), min coefficient 13437063/230863520

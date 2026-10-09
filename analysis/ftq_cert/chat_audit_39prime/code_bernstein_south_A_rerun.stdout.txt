@@ -1,0 +1,8 @@
+C1a  -g: CERTIFIED on mu in [-1/4,-1/8] with 1 mu-pieces; min Bernstein coefficient 496017/20480000 (~0.02422)
+C1b  G1: CERTIFIED on mu in [-1/4,-1/8] with 1 mu-pieces; min Bernstein coefficient 43139741157/184690816000 (~0.2336)
+AUX  d^2-e: CERTIFIED on mu in [-1/4,3/5] with 1 mu-pieces; min Bernstein coefficient 26759636200921/63690375390625 (~0.4202)
+C2  -T*: CERTIFIED on mu in [-1/4,1/2] with 1 mu-pieces; min Bernstein coefficient 2654102907557547195554904573/30040419379842682730000000000 (~0.08835)
+C3  -M*: CERTIFIED on mu in [1/2,3/5] with 1 mu-pieces; min Bernstein coefficient 1912706897521600464535791/37550524224803353412500000 (~0.05094)
+C4a -C0(1/2): min Bernstein coefficient 1319883/36160000 (~0.0365) -> CERTIFIED
+C4b  C0(3/5): min Bernstein coefficient 78/3125 (~0.02496) -> CERTIFIED
+ALL CERTIFICATES PASS

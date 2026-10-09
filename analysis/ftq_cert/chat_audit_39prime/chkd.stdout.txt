@@ -1,0 +1,6 @@
+J: min Bernstein of d-416/625 = 0  (>=0 needed; =0 allowed at the attained corner)
+J: min Bernstein of 13/10-d = 96386071/8172160000
+d at (4/25,1,3/5) = 416/625
+core = 10778024217619399/81721600000000000 >1/8: True
+S''_lb recomputed = 635530452759/817216000000 matches: True
+C0* at 1/2 = -1319883/36160000  C0* at 2/5 = -41747957/282500000

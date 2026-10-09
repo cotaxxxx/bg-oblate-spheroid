@@ -1,0 +1,20 @@
+(1) Pi_3 > 0 on K: PASS min Bernstein coeff = 1572994971/23086352000
+(1) Pi_14/5 > 0 on K: PASS min Bernstein coeff = 23286555999/144289700000
+(2a) c=913/1000 > (1+sqrt29)/7: PASS 
+(2b) (1-c^2)d^2 - e > 0 on K  (=> theta d > 14/5): PASS min coeff = 665724/9765625
+(3a) d >= 16/25 on K: PASS Bernstein lower bound = 16/25
+(3b) d^2 - e >= 256/625 on K (v >= 16/25, u^2 = 2(d+v) >= 64/25): PASS lower bound = 256/625
+(3c) h >= 141/113 on K: PASS lower bound = 141/113
+(3d) a^2 <= 15/16 on K: PASS upper bound = 15/16
+(3e) T range on K: PASS [22107911/18080000, 67/25]
+(3f) C0 range on K (C0 < 0): PASS [-209/100, -70811733/57856000]
+(3g) E <= g < 0 on K: PASS g upper bound = -30053/102400
+(3h) 4 r q/(h u^2) < 1/14 on K (=> M > 13/14 h u): PASS bound = 28125/1359616
+(3i) secant coefficient 7 Z^2 r^2/(13 m v u) <= eps = 3/100 on K: PASS |Z| <= 7924370683/849760000 (~9.325), coefficient = 5086447708448780805609/355067704829628215459840 (~0.01433)
+(4a) completing-the-square identity for d: PASS 
+(4b) d < 13/10 on K: PASS d <= 515867950/400320919 (~1.28864)
+(4c) Pi_t/d > eta on K for both t: PASS Pi_min = 1572994971/23086352000 > eta*13/10 = 39/2000
+(5a) dC0/dm < 0, dC0/dL >= 0 (C0 max at L=8649/40000, m=112/113): PASS 
+(5b) int_{-1}^{1/2} (112/113-mu)(-C0*+3/200) dmu = 211843484253/81721600000 (~2.59226); with pi>=3: (3/10)*I = 635530452759/817216000000 (~0.77768)
+(5c) (3/10)*I > 104/625 (previous total positive-mass lower bound 207/5000 + 1/8; the new bound REPLACES it, no addition): PASS 
+ALL CERTIFICATES PASS

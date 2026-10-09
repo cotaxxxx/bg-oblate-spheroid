@@ -1,0 +1,9 @@
+EXACT ALGEBRA CHECKS: PASS
+SymPy: 1.14.0
+Pi_3: degree [2, 3, 5] coefficients 72 minimum 106592/1953125
+Pi_14/5: degree [2, 3, 5] coefficients 72 minimum 40192/1953125
+beta(0) interval: ['38717/50000000', '15487/20000000']
+beta(1/8192) interval: ['-47419/100000000', '-23709/50000000']
+Original beta positive on [-1/4,-1/8]; mass >1/1000.
+Alternative analytic proof: G>0 on J; core mass >1/8.
+Remaining required budget: U_north+U_near <104/625; UNPROVED.
