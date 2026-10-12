@@ -1,0 +1,214 @@
+{
+  "checker": {
+    "blob_paths": [
+      "gap1_analysis/c1b_resumable_driver.py",
+      "gap1_producer/global_axial_c1b_gating.py",
+      "gap1_checker/global_axial_c1b_gating.py",
+      "gap1_producer/global_axial_c1b_kernel.py",
+      "gap1_checker/global_axial_c1b_kernel.py",
+      "gap1_producer/global_axial_c1b_producer.py",
+      "gap1_checker/global_axial_c1b_checker.py",
+      "producer/monotone_tube_refinement_producer.py",
+      "checker/monotone_tube_refinement_checker.py",
+      "checker/monotone_tube_interval_checker.py",
+      "producer/global_axial_c1b_endpoint_r.py",
+      "checker/global_axial_c1b_endpoint_r.py",
+      "producer/endpoint_interval_producer.py",
+      "producer/monotone_tube_interval_producer.py",
+      "producer/global_axial_c0_producer.py",
+      "checker/global_axial_c0_checker.py",
+      "checker/endpoint_local_controls.py",
+      "checker/oblate_axis_prototype.py",
+      "checker/endpoint_interval_checker.py",
+      "checker/endpoint_local_checker.py",
+      "producer/global_axial_c0_producer_v2.py",
+      "checker/global_axial_c0_checker_v2.py",
+      "producer/c0a_four_group_v2.py",
+      "checker/c0a_four_group_v2.py",
+      "analysis/c1b_cross_lineage_compare.py"
+    ],
+    "expected_blobs": {
+      "analysis/c1b_cross_lineage_compare.py": "33cdd3290bfa09c88cd8936e1f4557af491f0bc2",
+      "checker/c0a_four_group_v2.py": "18e66b6450cd2a379bbb869a99e4e5ce6999f6e5",
+      "checker/endpoint_interval_checker.py": "4cb16f8a975e5a3be601a7926af695ad5be57790",
+      "checker/endpoint_local_checker.py": "2bddddf6e9a08ca7acae94c89bd4d5ab1de861bc",
+      "checker/endpoint_local_controls.py": "c913c47d228e51a15f56957f5df9196efa1b22c3",
+      "checker/global_axial_c0_checker.py": "85978625e029b01c8ae40fa8234566f10eea251c",
+      "checker/global_axial_c0_checker_v2.py": "fbec890588d2d390ea67bc90116b80bb37ebf9cc",
+      "checker/global_axial_c1b_endpoint_r.py": "1a953b22c12a89afc06790b28d6b0dea9680dc43",
+      "checker/monotone_tube_interval_checker.py": "f2fa2a5a42d35b8b77e3c63fa0d9ad48ce562a77",
+      "checker/monotone_tube_refinement_checker.py": "15d660265552fc2f2c83ffe897ed5efab8514da2",
+      "checker/oblate_axis_prototype.py": "df402583c320c459ff4f72dc5294558f14f44d31",
+      "gap1_analysis/c1b_resumable_driver.py": "f381ae6849670f02f2c1b4d86442e3df6c6a299d",
+      "gap1_checker/global_axial_c1b_checker.py": "5b526ddc4f48dc01d3f95eafb44f3d638e2e35ed",
+      "gap1_checker/global_axial_c1b_gating.py": "36bb7983f2a806ba3d87b7f486aafd22ea1a5184",
+      "gap1_checker/global_axial_c1b_kernel.py": "b4bb44bdf57dc2ec6e5a1b3b262acdfec7e07a39",
+      "gap1_producer/global_axial_c1b_gating.py": "baffaf4952364cce94411b8982ce57c3a5d7bea1",
+      "gap1_producer/global_axial_c1b_kernel.py": "5503bb7da981ef90266a9cdd67de2bef07998fd8",
+      "gap1_producer/global_axial_c1b_producer.py": "34ef3758382de5993116c49d511b5b68e4e87bfa",
+      "producer/c0a_four_group_v2.py": "2bb556ab4f0c0cfd9ce6afa65d762551dd3791f4",
+      "producer/endpoint_interval_producer.py": "51060fea01cb9ff661518b7c52146f71187846ff",
+      "producer/global_axial_c0_producer.py": "c4c8d6b59d3829e1843d149b7857eda5800287aa",
+      "producer/global_axial_c0_producer_v2.py": "cdbdf51f8656c1fcae97666cc1846461b250a591",
+      "producer/global_axial_c1b_endpoint_r.py": "29d441a578f10fe7f4beb38476d3699f3648a3b1",
+      "producer/monotone_tube_interval_producer.py": "b6d96df223c0e423e804d96f4892a8e818c05827",
+      "producer/monotone_tube_refinement_producer.py": "c2fee40053ab055ce352e93e1c6d1fc43e46310a"
+    },
+    "expected_environment": {
+      "lscpu_canonical": "7562aa155cc31a7c711ca9b717769448ed6aab904f187e34d6f2e8393f0bbfb9",
+      "os_release": [
+        "PRETTY_NAME=\"Ubuntu 26.04 LTS\"",
+        "NAME=\"Ubuntu\"",
+        "VERSION_ID=\"26.04\"",
+        "VERSION=\"26.04 LTS (Resolute Raccoon)\"",
+        "VERSION_CODENAME=resolute",
+        "ID=ubuntu",
+        "ID_LIKE=debian",
+        "HOME_URL=\"https://www.ubuntu.com/\"",
+        "SUPPORT_URL=\"https://help.ubuntu.com/\"",
+        "BUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"",
+        "PRIVACY_POLICY_URL=\"https://www.ubuntu.com/legal/terms-and-policies/privacy-policy\"",
+        "UBUNTU_CODENAME=resolute",
+        "LOGO=ubuntu-logo"
+      ],
+      "packages": {
+        "mpmath": "1.4.1",
+        "python-flint": "0.9.0"
+      },
+      "pip_freeze_all": [
+        "mpmath==1.4.1",
+        "pip==24.0",
+        "python-flint==0.9.0",
+        "setuptools==79.0.1"
+      ],
+      "pip_version": "24.0",
+      "platform": "Linux-7.0.0-31-generic-x86_64-with-glibc2.43",
+      "python_executable": "/home/daybreak/.pyenv/versions/3.11.16/bin/python",
+      "python_version": "3.11.16 (main, Aug 22 2026, 04:35:05) [GCC 15.2.0]",
+      "uname": {
+        "machine": "x86_64",
+        "node": "daybreak-works",
+        "processor": "",
+        "release": "7.0.0-31-generic",
+        "system": "Linux",
+        "version": "#31-Ubuntu SMP PREEMPT_DYNAMIC Sat Aug  1 04:26:38 UTC 2026"
+      }
+    },
+    "ref": "run/c-gap1-v0-5",
+    "requirements_sha256": {
+      "requirements-interval.txt": "cd171f53dd8a187b2ef4bd7ad0cc2adbe2082395646c0c57407f4e3514c11f5c",
+      "requirements-prototype.txt": "2fee6d6bf48308ae7c510558f538b64dcb932d084efb9d4ff39199feff55ba3f"
+    },
+    "wheel_dir": "/home/daybreak/basepoint-geometry-artifacts/C1b/20260905T140551Z/wheels",
+    "wheel_sha256": {
+      "mpmath-1.4.1-py3-none-any.whl": "dc4f0ea2304480d4a9a48a94c1020571558ade522b44a6912efac63a586e140f",
+      "python_flint-0.9.0-cp310-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl": "376b88cacd30612479e839ffdba887599d3f9c8c0e214852bf80bb2b194e4d76"
+    }
+  },
+  "producer": {
+    "blob_paths": [
+      "gap1_analysis/c1b_resumable_driver.py",
+      "gap1_producer/global_axial_c1b_gating.py",
+      "gap1_checker/global_axial_c1b_gating.py",
+      "gap1_producer/global_axial_c1b_kernel.py",
+      "gap1_checker/global_axial_c1b_kernel.py",
+      "gap1_producer/global_axial_c1b_producer.py",
+      "gap1_checker/global_axial_c1b_checker.py",
+      "producer/monotone_tube_refinement_producer.py",
+      "checker/monotone_tube_refinement_checker.py",
+      "checker/monotone_tube_interval_checker.py",
+      "producer/global_axial_c1b_endpoint_r.py",
+      "checker/global_axial_c1b_endpoint_r.py",
+      "producer/endpoint_interval_producer.py",
+      "producer/monotone_tube_interval_producer.py",
+      "producer/global_axial_c0_producer.py",
+      "checker/global_axial_c0_checker.py",
+      "checker/endpoint_local_controls.py",
+      "checker/oblate_axis_prototype.py",
+      "checker/endpoint_interval_checker.py",
+      "checker/endpoint_local_checker.py",
+      "producer/global_axial_c0_producer_v2.py",
+      "checker/global_axial_c0_checker_v2.py",
+      "producer/c0a_four_group_v2.py",
+      "checker/c0a_four_group_v2.py",
+      "analysis/c1b_cross_lineage_compare.py"
+    ],
+    "expected_blobs": {
+      "analysis/c1b_cross_lineage_compare.py": "33cdd3290bfa09c88cd8936e1f4557af491f0bc2",
+      "checker/c0a_four_group_v2.py": "18e66b6450cd2a379bbb869a99e4e5ce6999f6e5",
+      "checker/endpoint_interval_checker.py": "4cb16f8a975e5a3be601a7926af695ad5be57790",
+      "checker/endpoint_local_checker.py": "2bddddf6e9a08ca7acae94c89bd4d5ab1de861bc",
+      "checker/endpoint_local_controls.py": "c913c47d228e51a15f56957f5df9196efa1b22c3",
+      "checker/global_axial_c0_checker.py": "85978625e029b01c8ae40fa8234566f10eea251c",
+      "checker/global_axial_c0_checker_v2.py": "fbec890588d2d390ea67bc90116b80bb37ebf9cc",
+      "checker/global_axial_c1b_endpoint_r.py": "1a953b22c12a89afc06790b28d6b0dea9680dc43",
+      "checker/monotone_tube_interval_checker.py": "f2fa2a5a42d35b8b77e3c63fa0d9ad48ce562a77",
+      "checker/monotone_tube_refinement_checker.py": "15d660265552fc2f2c83ffe897ed5efab8514da2",
+      "checker/oblate_axis_prototype.py": "df402583c320c459ff4f72dc5294558f14f44d31",
+      "gap1_analysis/c1b_resumable_driver.py": "f381ae6849670f02f2c1b4d86442e3df6c6a299d",
+      "gap1_checker/global_axial_c1b_checker.py": "5b526ddc4f48dc01d3f95eafb44f3d638e2e35ed",
+      "gap1_checker/global_axial_c1b_gating.py": "36bb7983f2a806ba3d87b7f486aafd22ea1a5184",
+      "gap1_checker/global_axial_c1b_kernel.py": "b4bb44bdf57dc2ec6e5a1b3b262acdfec7e07a39",
+      "gap1_producer/global_axial_c1b_gating.py": "baffaf4952364cce94411b8982ce57c3a5d7bea1",
+      "gap1_producer/global_axial_c1b_kernel.py": "5503bb7da981ef90266a9cdd67de2bef07998fd8",
+      "gap1_producer/global_axial_c1b_producer.py": "34ef3758382de5993116c49d511b5b68e4e87bfa",
+      "producer/c0a_four_group_v2.py": "2bb556ab4f0c0cfd9ce6afa65d762551dd3791f4",
+      "producer/endpoint_interval_producer.py": "51060fea01cb9ff661518b7c52146f71187846ff",
+      "producer/global_axial_c0_producer.py": "c4c8d6b59d3829e1843d149b7857eda5800287aa",
+      "producer/global_axial_c0_producer_v2.py": "cdbdf51f8656c1fcae97666cc1846461b250a591",
+      "producer/global_axial_c1b_endpoint_r.py": "29d441a578f10fe7f4beb38476d3699f3648a3b1",
+      "producer/monotone_tube_interval_producer.py": "b6d96df223c0e423e804d96f4892a8e818c05827",
+      "producer/monotone_tube_refinement_producer.py": "c2fee40053ab055ce352e93e1c6d1fc43e46310a"
+    },
+    "expected_environment": {
+      "lscpu_canonical": "7562aa155cc31a7c711ca9b717769448ed6aab904f187e34d6f2e8393f0bbfb9",
+      "os_release": [
+        "PRETTY_NAME=\"Ubuntu 26.04 LTS\"",
+        "NAME=\"Ubuntu\"",
+        "VERSION_ID=\"26.04\"",
+        "VERSION=\"26.04 LTS (Resolute Raccoon)\"",
+        "VERSION_CODENAME=resolute",
+        "ID=ubuntu",
+        "ID_LIKE=debian",
+        "HOME_URL=\"https://www.ubuntu.com/\"",
+        "SUPPORT_URL=\"https://help.ubuntu.com/\"",
+        "BUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"",
+        "PRIVACY_POLICY_URL=\"https://www.ubuntu.com/legal/terms-and-policies/privacy-policy\"",
+        "UBUNTU_CODENAME=resolute",
+        "LOGO=ubuntu-logo"
+      ],
+      "packages": {
+        "mpmath": "1.4.1",
+        "python-flint": "0.9.0"
+      },
+      "pip_freeze_all": [
+        "mpmath==1.4.1",
+        "pip==24.0",
+        "python-flint==0.9.0",
+        "setuptools==79.0.1"
+      ],
+      "pip_version": "24.0",
+      "platform": "Linux-7.0.0-31-generic-x86_64-with-glibc2.43",
+      "python_executable": "/home/daybreak/.pyenv/versions/3.11.16/bin/python",
+      "python_version": "3.11.16 (main, Aug 22 2026, 04:35:05) [GCC 15.2.0]",
+      "uname": {
+        "machine": "x86_64",
+        "node": "daybreak-works",
+        "processor": "",
+        "release": "7.0.0-31-generic",
+        "system": "Linux",
+        "version": "#31-Ubuntu SMP PREEMPT_DYNAMIC Sat Aug  1 04:26:38 UTC 2026"
+      }
+    },
+    "ref": "run/c-gap1-v0-5",
+    "requirements_sha256": {
+      "requirements-interval.txt": "cd171f53dd8a187b2ef4bd7ad0cc2adbe2082395646c0c57407f4e3514c11f5c",
+      "requirements-prototype.txt": "2fee6d6bf48308ae7c510558f538b64dcb932d084efb9d4ff39199feff55ba3f"
+    },
+    "wheel_dir": "/home/daybreak/basepoint-geometry-artifacts/C1b/20260905T140551Z/wheels",
+    "wheel_sha256": {
+      "mpmath-1.4.1-py3-none-any.whl": "dc4f0ea2304480d4a9a48a94c1020571558ade522b44a6912efac63a586e140f",
+      "python_flint-0.9.0-cp310-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl": "376b88cacd30612479e839ffdba887599d3f9c8c0e214852bf80bb2b194e4d76"
+    }
+  }
+}
