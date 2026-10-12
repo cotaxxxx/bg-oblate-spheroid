@@ -1,5 +1,5 @@
 #!/home/daybreak/.pyenv/versions/3.11.16/bin/python
-"""D-OB P2 producer. Implements sealed SPEC V2 and PRE-RUN CONTRACT V2."""
+"""D-OB P2 producer. Implements Judge-frozen SPEC V3 / PRE-RUN CONTRACT V3."""
 from __future__ import annotations
 
 import argparse
@@ -32,6 +32,8 @@ NWORKERS = 12
 N_MU = 64
 N_PHI = 32
 N_INITIAL_CELLS = N_MU * N_PHI
+FROZEN_SPEC_V3_SHA256 = "511d2f371784a07359c2b691abfb224ef772cddf298f2890b5596a5dc2309330"
+EXCLUDED_INITIALS = {(7, 7, 0), (0, 0, 3)}
 
 ctx.prec = BITS
 PI = arb.pi()
@@ -409,10 +411,13 @@ def file_sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 def runtime_identity():
+    spec_sha = file_sha("analysis/D_OB_P2_CERTIFICATION_SPEC_V3.md")
+    if spec_sha != FROZEN_SPEC_V3_SHA256:
+        raise SystemExit("SPEC_V3_IDENTITY_MISMATCH")
     return {
         "head": os.popen("git rev-parse HEAD").read().strip(),
         "producer_sha256": file_sha(__file__),
-        "spec_sha256": file_sha("analysis/D_OB_P2_CERTIFICATION_SPEC_V2.md"),
+        "spec_sha256": spec_sha,
         "correction_sha256": file_sha("analysis/D_OB_P2_RESUME_CORRECTION_PREDECLARE.md"),
     }
 
@@ -519,7 +524,8 @@ def solve_initial(index):
 
 
 def all_indices():
-    return [(i,j,k) for i in range(8) for j in range(8) for k in range(4)]
+    return [(i,j,k) for i in range(8) for j in range(8) for k in range(4)
+            if (i,j,k) not in EXCLUDED_INITIALS]
 
 
 def sha256(path):
@@ -574,6 +580,8 @@ def main():
         else:
             with mp.Pool(args.workers,initializer=init_worker,initargs=(str(ledger),resume,_COUNTER,identity)) as pool:
                 results=list(pool.imap(solve_initial,indices))
+        if len(results) != len(indices):
+            raise SystemExit("INITIAL_TRAVERSAL_INCOMPLETE")
         used={k for r in results for k in r["used_resume"]}
         if used!=set(resume): raise SystemExit("LEDGER_NON_PREFIX_COMPATIBLE")
         cert=run/"certificate.jsonl.gz"

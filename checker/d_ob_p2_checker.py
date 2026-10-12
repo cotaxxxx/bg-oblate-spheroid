@@ -1,5 +1,5 @@
 #!/home/daybreak/.pyenv/versions/3.11.16/bin/python
-"""Independent D-OB P2 certificate checker for sealed SPEC V2."""
+"""Independent D-OB P2 certificate checker for Judge-frozen SPEC V3."""
 from __future__ import annotations
 import argparse, gzip, hashlib, json, math, multiprocessing as mp
 import os, fcntl, socket, signal, threading, time
@@ -16,6 +16,7 @@ RHO0=Q(1,8)
 N_MU,N_PHI=64,32
 MAX_BOX_DEPTH=12
 SMOKE=[(7,0,0),(7,7,0),(0,0,3),(3,3,1)]
+EXCLUDED_INITIALS={(7,7,0),(0,0,3)}
 ctx.prec=BITS
 PI=arb.pi()
 C1=PI*PI/4+2*PI
@@ -241,6 +242,25 @@ def check_leaf(B,obj):
     if not margin.lower()>0:raise ValueError("nonpositive checker margin")
     return len(cells),margin.lower().str(30)
 
+
+def active_indices():
+    return [(i,j,k) for i in range(8) for j in range(8) for k in range(4)
+            if (i,j,k) not in EXCLUDED_INITIALS]
+
+def validate_initial_ids(records, expected=None):
+    expected = active_indices() if expected is None else list(expected)
+    actual=[]
+    for rec in records:
+        v=rec.get("initial")
+        if not isinstance(v,list) or len(v)!=3:
+            raise ValueError("initial id format")
+        actual.append(tuple(v))
+    if set(actual)!=set(expected):
+        raise ValueError("initial id set")
+    if actual!=expected:
+        raise ValueError("initial order")
+    return expected
+
 def initial_box(i,j,k):
     return Box(Q(i,8),Q(i+1,8),Q(j,8),Q(j+1,8),Q(2,5)+Q(k,4)*Q(13,50),Q(2,5)+Q(k+1,4)*Q(13,50),0)
 
@@ -322,8 +342,9 @@ def main():
         records=[]
         with gzip.open(cert,"rt",encoding="utf-8") as f:
             for line in f:records.append(json.loads(line))
-        expected=SMOKE if args.smoke else [(i,j,k) for i in range(8) for j in range(8) for k in range(4)]
+        expected=SMOKE if args.smoke else active_indices()
         if len(records)!=len(expected):raise ValueError("record count")
+        validate_initial_ids(records, expected)
         units=[]; leaves=cells=0
         for rec,exp in zip(records,expected):
             if exp in saved:
