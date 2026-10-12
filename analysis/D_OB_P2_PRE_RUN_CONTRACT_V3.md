@@ -2,7 +2,7 @@
 
 **Status**: `DRAFT / NOT_FROZEN / NOT_RUN / NOT_BINDING`
 
-**Base.** Branch `design/d-ob-p2`. Specification `analysis/D_OB_P2_CERTIFICATION_SPEC_V3.md`, SHA-256 `0e07fb4ec8c45ea366ba4abf4cddacdc1a10ce4bd1ed2eca5e32a69b3a90e26f`, cited below as SPEC. This contract fixes how SPEC V3 is executed on `P'`; it changes no numerical kernel, chart, cut, budget, or subdivision rule in SPEC.
+**Base.** Branch `design/d-ob-p2`. Specification `analysis/D_OB_P2_CERTIFICATION_SPEC_V3.md`, SHA-256 `511d2f371784a07359c2b691abfb224ef772cddf298f2890b5596a5dc2309330`, cited below as SPEC. This contract fixes how SPEC V3 is executed on `P'`; it changes no numerical kernel, chart, cut, budget, or subdivision rule in SPEC.
 
 **Supersedes.** CONTRACT V2 (`analysis/D_OB_P2_PRE_RUN_CONTRACT_V2.md`, SHA-256 `8461069aad635efe517008c52ce571a09b8d552f43726a9fccac508a2c093e27`). By Judge ruling 2026-10-13, V3 executes the retained 254 initial boxes of SPEC V3, continues through all retained initial boxes even after an `UNRESOLVED` result, and replaces smoke rerun by the accepted resume controls plus a 254-box enumeration dry run. All other execution obligations are inherited from V2.
 
@@ -54,7 +54,7 @@ The run is `PASS` if and only if (i) the producer exits 0 after completing all 2
 
 ## 7. Pre-run acceptance controls
 
-Smoke is not rerun. Before the main run, rerun the accepted resumable-execution controls C-R1, C-R2 and C-R3 from `analysis/D_OB_P2_RESUME_CORRECTION_PREDECLARE.md` / `tests/d_ob_p2_resume_controls.py` against the implementation candidate. In addition, perform an enumeration-only dry run that evaluates no mathematical kernel and require: (a) exactly 254 active initial-box ids, (b) exact canonical order inherited from the 256-box list, and (c) excluded-id set exactly `{(7,7,0),(0,0,3)}`. Any failure is fail-closed and blocks the main run. The historical smoke #4 remains diagnostic history and is not evidence.
+Smoke is not rerun. Before the main run, rerun the accepted resumable-execution controls C-R1, C-R2 and C-R3 from `analysis/D_OB_P2_RESUME_CORRECTION_PREDECLARE.md` / `tests/d_ob_p2_resume_controls.py` against the implementation candidate. In addition, perform an enumeration-only dry run that evaluates no mathematical kernel and require: (a) exactly 254 active initial-box ids, (b) exact canonical order inherited from the 256-box list, and (c) excluded-id set exactly `{(7,7,0),(0,0,3)}`. The checker is also run, without evaluating any mathematical kernel, on three control certificates built from the dry-run enumeration: (d) exactly the 254 active ids, which must pass the coverage check of §4; (e) one active id removed, which must fail it; (f) one excluded id added, which must fail it. The checker requires the set of initial ids in a certificate to equal the 254 active ids exactly. Any failure is fail-closed and blocks the main run. The historical smoke #4 remains diagnostic history and is not evidence.
 
 ## 8. Receipt and backup
 

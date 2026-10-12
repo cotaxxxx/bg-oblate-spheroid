@@ -20,7 +20,7 @@ where `relint_P` denotes interior relative to `P`; hence faces shared with retai
 H(rho, z; lambda) > 0,     rho = r (1 - tau^2)/(1 + tau^2),     z = lambda r · 2 tau/(1 + tau^2).
 ~~~
 
-Since `rho^2 + z^2/lambda^2 = r^2`, the map `(r, tau) -> (rho, z)` sends `[0,1]^2` onto `Q_lambda` for each `lambda`; `tau = 0` is the equator, `tau = 1` the axis, `r = 1` the boundary. With P1 Lemmas 6.1–6.2 the claim excludes interior stationary points of `E` with `rho > 0`, for every `lambda` in `[2/5, 33/50]`.
+Since `rho^2 + z^2/lambda^2 = r^2`, the map `(r, tau) -> (rho, z)` sends `[0,1]^2` onto `Q_lambda` for each `lambda`; `tau = 0` is the equator, `tau = 1` the axis, `r = 1` the boundary. With P1 Lemmas 6.1–6.2 the claim excludes interior stationary points of `E` with `rho > 0` at every base point whose parameters `(r, tau, lambda)` lie in `P'`. It says nothing on the relative interiors of `B_770` and `B_003`; those are delegated to D-AN-1 Sigma and to D4 respectively, and the exclusion for every `lambda` in `[2/5, 33/50]` follows only after those are closed.
 
 ## §1 Quantity certified
 
