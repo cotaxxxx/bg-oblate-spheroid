@@ -1,0 +1,4 @@
+CHECKER_CONTROL_D PASS active_ids=254
+CHECKER_CONTROL_E PASS rejected=ValueError:initial id set
+CHECKER_CONTROL_F PASS rejected=ValueError:initial id set
+CHECKER_CONTROLS_PASS D E F KERNEL_NOT_EVALUATED

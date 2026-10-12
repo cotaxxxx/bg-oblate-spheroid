@@ -1,0 +1,7 @@
+C-R1 LEAF_SET_MATCH uninterrupted=1 kill_resume=1 equal=True
+C-R2 WRITE_THROUGH success=node_decision fail_closed=LEDGER_IDENTITY_MISMATCH
+C-R2 CHECKER_WRITE_THROUGH success=unit_complete
+C-R2 LOCK_GATES stale_recovered=True live_fail=LOCK_LIVE_WRITER checker_stale_recovered=True
+C-R3 HEARTBEAT_EXISTS HEARTBEAT completed_nodes=0
+C-R3 INTERRUPTION_PROVENANCE present=True
+CONTROLS_PASS C-R1 C-R2 C-R3
