@@ -9,6 +9,14 @@ Updated: 2026-08-26
 This repository currently contains no certified theorem, certified numerical
 value, approved production kernel, or Actions-produced clean-room certificate.
 
+## D5 V3 current run state — 2026-10-18
+
+| Workstream | State | Source of authority | Next step |
+|---|---|---|---|
+| D5 | **V3 ABORTED / NOT_EVIDENCE (10/18) · redesign in progress** | [Judge abort ruling and stop record](analysis/D5_V3_RUN_ABORT_RECORD_2026-10-18.md) | Paper-only diagnosis of `i_r=0` (`r<=1/8`) unresolved residues; re-derive D4 center lower bound over `lambda in [2/5,33/50]`; new V4 predeclare → independent audit → Judge ruling. No resume authorization. |
+
+The V3 producer run was stopped before all 254 active initial boxes finished; this is **not** a completed-traversal `FAIL` under CONTRACT V3. The stopped ledger is diagnostic and must not be promoted to a certificate. Existing V3 pins and run evidence are not modified.
+
 ## Analytically derived kernel
 
 For the oblate spheroid
