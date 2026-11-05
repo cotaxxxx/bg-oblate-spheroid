@@ -1,0 +1,5 @@
+{
+  "sphere_exact_point_controls": 10,
+  "sphere_integrated_polynomial": "-16/9",
+  "scope": "auxiliary consistency only; not full-domain physical jet verification"
+}

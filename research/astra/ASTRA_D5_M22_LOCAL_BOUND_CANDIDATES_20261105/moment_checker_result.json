@@ -1,0 +1,18 @@
+{
+  "status": "MOMENT_AND_AGGREGATION_CHECK_PASS",
+  "moments_checked": 256,
+  "physical_cells_checked": 128,
+  "cases": [
+    {
+      "name": "center_half",
+      "lower": "-1519473017763337040732287893283870359046133225/133804471191183738849214309635890169035882496",
+      "strict_rational_comparison": "lower > -12 > -400"
+    },
+    {
+      "name": "hard_axis_enlarged_rectangle",
+      "lower": "-3188063447016491501593387742336897551732021843/16725558898897967356151788704486271129485312",
+      "strict_rational_comparison": "lower > -191 > -400"
+    }
+  ],
+  "not_checked": "independent physical jet reconstruction and original K20 normalization"
+}
