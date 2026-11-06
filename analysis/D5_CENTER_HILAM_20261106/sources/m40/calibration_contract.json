@@ -1,0 +1,71 @@
+{
+  "status": "PRE_CALIBRATION_FIXED",
+  "date": "2026-11-05",
+  "precision": "dyadic_outward",
+  "bits": 128,
+  "moment_N": 24,
+  "prefactor_pi_bounds": [
+    "333/106",
+    "355/113"
+  ],
+  "angle_branches": "mu +/- and cos(phi) +/-",
+  "cells_candidates": [
+    16,
+    32
+  ],
+  "pilot_only": true,
+  "calibrations": [
+    1,
+    2,
+    3
+  ],
+  "cases": [
+    {
+      "name": "center_half",
+      "lambda": [
+        "1/2",
+        "1/2"
+      ],
+      "rho": [
+        "0",
+        "0"
+      ],
+      "z": [
+        "0",
+        "0"
+      ],
+      "reference_true_approx": "-5.60"
+    },
+    {
+      "name": "low_lambda_rho_top",
+      "lambda": [
+        "2/5",
+        "81/200"
+      ],
+      "rho": [
+        "7/64",
+        "1/8"
+      ],
+      "z": [
+        "7/200",
+        "81/1600"
+      ]
+    },
+    {
+      "name": "upper_lambda_z_top",
+      "lambda": [
+        "59/100",
+        "119/200"
+      ],
+      "rho": [
+        "7/64",
+        "1/8"
+      ],
+      "z": [
+        "357/6400",
+        "119/1600"
+      ]
+    }
+  ],
+  "side_effects": "isolated M40 calibration files only; no B7/D5 or Git changes"
+}
