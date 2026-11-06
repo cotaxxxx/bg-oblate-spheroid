@@ -2,7 +2,18 @@
 
 **Status updated 2026-11-06:** The user has reported that chat completed the independent audit of C0', M40', M22' and (C7'), resolved the cover serialization-hash discrepancy by canonical endpoint comparison, and that Judge ruled the **entire centre column** `r<=1/8`, `lambda in [2/5,33/50]`, `tau in [0,1]` **CLOSED conditional on P1**. The high-lambda conclusion is `H >= 43/120 > 0` under the inherited P1 normalization and regularity assumptions. The D4-delegated `B_003` is covered including all boundaries.
 
-**Evidence provenance:** This disposition is currently **user-relayed**. The original chat-authored file `CHAT_AUDIT_D5_CENTER_HILAM_20261106.md` was not available to Dig and has not been invented or uploaded. See [Dig readback of the chat audit and Judge disposition](DIG_READBACK_CHAT_AUDIT_DISPOSITION_20261106.md) (commit `7fea26ad45cb5380520a68f2c52dc0c116656957`). The full normalized-cover SHA-256 values and the original audit transcript remain archival items to register when available; historical raw-byte SHA mismatches are preserved in their original records and are **not** silently overwritten.
+**Evidence provenance:** This disposition is currently **user-relayed**. The original chat-authored file `CHAT_AUDIT_D5_CENTER_HILAM_20261106.md` was not available to Dig and has not been invented or uploaded. See [Dig readback of the chat audit and Judge disposition](DIG_READBACK_CHAT_AUDIT_DISPOSITION_20261106.md) (commit `7fea26ad45cb5380520a68f2c52dc0c116656957`). The **complete normalized-cover SHA-256 values have now been supplied by the user and recorded below**. The chat-authored original audit is still unavailable: its expected SHA-256 is `7eae9f035cac17f806cbdef372f49c68d372918d469d6ec769fa6756459249c4`, **not yet verified against file bytes**. Historical raw-byte SHA mismatches are preserved in their original records and are **not** silently overwritten.
+
+## Canonical endpoint-list SHA-256 — user-provided, original audit document pending
+
+Each canonical list consists of outer-box endpoints represented as reduced rational strings and sorted; these are **geometry normalization hashes**, not raw JSON file hashes.
+
+| Component | Boxes | User-provided normalized geometry SHA-256 |
+| --- | ---: | --- |
+| M40' | 416 | `8bd4725fe89408f35796607db6d3cb4c1ca384a61e1567327d946e93b780be07` |
+| M22' | 52 | `8886d04376b60172df71502ce4c2cbabc7c2cd498f15e1c1b4a4aeda2c55446a` |
+
+The reported chat audit established geometric one-to-one equivalence despite differing raw serialization hashes; Dig has not recomputed the normalized digests independently or inspected the original chat-authored audit bytes. The separate [Dig readback](DIG_READBACK_CHAT_AUDIT_DISPOSITION_20261106.md) records the provenance. The historical first-registration checks below are preserved as a time-stamped snapshot.
 
 **Distinctions:** `CENTER_COLUMN_CLOSED_CONDITIONAL_ON_P1` per reported Judge ruling; not `D4_OVERALL_CLOSED`, not `D5_ALL_DOMAIN_CLOSED`, and not authorization for `D5_V4_FREEZE` or a general-domain run.
 
