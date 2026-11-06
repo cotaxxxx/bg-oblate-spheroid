@@ -1,9 +1,19 @@
-# D5 high-lambda center column: computation evidence, adoption pending
+# D5 high-lambda centre column — chat audit PASS / Judge CLOSED (conditional on P1)
+
+**Status updated 2026-11-06:** The user has reported that chat completed the independent audit of C0', M40', M22' and (C7'), resolved the cover serialization-hash discrepancy by canonical endpoint comparison, and that Judge ruled the **entire centre column** `r<=1/8`, `lambda in [2/5,33/50]`, `tau in [0,1]` **CLOSED conditional on P1**. The high-lambda conclusion is `H >= 43/120 > 0` under the inherited P1 normalization and regularity assumptions. The D4-delegated `B_003` is covered including all boundaries.
+
+**Evidence provenance:** This disposition is currently **user-relayed**. The original chat-authored file `CHAT_AUDIT_D5_CENTER_HILAM_20261106.md` was not available to Dig and has not been invented or uploaded. See [Dig readback of the chat audit and Judge disposition](DIG_READBACK_CHAT_AUDIT_DISPOSITION_20261106.md) (commit `7fea26ad45cb5380520a68f2c52dc0c116656957`). The full normalized-cover SHA-256 values and the original audit transcript remain archival items to register when available; historical raw-byte SHA mismatches are preserved in their original records and are **not** silently overwritten.
+
+**Distinctions:** `CENTER_COLUMN_CLOSED_CONDITIONAL_ON_P1` per reported Judge ruling; not `D4_OVERALL_CLOSED`, not `D5_ALL_DOMAIN_CLOSED`, and not authorization for `D5_V4_FREEZE` or a general-domain run.
+
+---
+
+## Historical first-registration receipt (pre-audit status, superseded only as to the reported ruling)
 
 Registered 2026-11-06 JST by Dig/Codex at the user's request.
 Target: lambda in [119/200,33/50]; M40' on 0 <= rho <= 1/8, 0 <= z <= lambda/8; M22' on rho=0, 0 <= z <= lambda/8.
 
-**All three computations exist and satisfy their numerical thresholds. This registration is not formal adoption.**
+**At first evidence registration, all three computations met their numerical thresholds but formal adoption remained pending. This is a historical statement. The subsequently reported chat audit PASS / Judge conditional CLOSED is recorded above, with its original audit file still awaiting archival registration.**
 The old M40 1,248-box and M22 156-box runs cover [2/5,119/200], not this high-lambda band.
 
 | Component | Completed computation | Existing second implementation | Formal adoption |
@@ -33,7 +43,7 @@ The C0 stored polynomial was independently converted to all 19 Bernstein coeffic
 
 No expensive interval integrations were rerun. The independent verifier outputs already present on the external PC were inspected. M40 verifier source SHA matches d39be478485cb1faaf804ddbf970ce1c790b0d7a5d0bf7f2fb400561c2cdad1b; M22 verifier source matches b4ea57e134150e57be8ced020eafa4cfd6c740af75d27939b108e23de38d6a89. M22 verifier rows do not embed source hashes; the driver and current source snapshot supply provenance, subject to chat review.
 
-## Remaining adoption conditions
+## Historical adoption conditions at first registration (status subsequently reported satisfied by chat/Judge; original transcript awaiting archival registration)
 
 1. C0': compare the exact coefficients/minimum with chat's original high-lambda reference (c0_hilam.py, reported SHA prefix e3b65e0f).
 2. Fixed-cover identity: actual high-lambda files were explicitly marked diagnostic candidates. Their byte hashes differ from the instruction's pins:
