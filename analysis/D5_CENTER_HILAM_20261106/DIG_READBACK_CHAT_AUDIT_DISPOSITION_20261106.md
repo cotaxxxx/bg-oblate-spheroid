@@ -26,7 +26,7 @@ Original fixed-file pins in the instruction (different **bytes**):
 - M40': `2082e711a4d0e9a68947ed40ed358aff6eb9bab2f6fe34213b068ea3b8a03d87`
 - M22': `d7fc47723f35600a0753984e60ca0c1c0494fab3515494f744412a5fc4925580`
 
-**User-relayed normalized geometry list SHA-256 prefixes:** M40' `8bd4725f…`, M22' `8886d043…`. The reported audit concludes that the mismatches arise from serialization/key/order differences and that geometric covers are identical. The full 64-character normalized hashes, exact normalization format and original independent audit transcript have **not** been obtained by Dig in this registration; do not replace these prefixes with invented full hashes or pretend the raw-byte identities match. Preserve the historical `REGISTRATION_CHECK.json` unchanged as its earlier-time record.
+**User-supplied normalized geometry SHA-256 (64 hexadecimal digits, not independently recomputed by Dig):** M40' (416 boxes) `8bd4725fe89408f35796607db6d3cb4c1ca384a61e1567327d946e93b780be07`; M22' (52 boxes) `8886d04376b60172df71502ce4c2cbabc7c2cd498f15e1c1b4a4aeda2c55446a`. Normalization is the sorted list of box endpoints rendered as strings of reduced rational fractions. The user reports that chat's independent audit compared the canonical endpoint lists and the producer/verifier results one-to-one and found matching geometry; the raw-byte cover file hashes above remain different, due to serialization/key/order. The original independent audit document is still **not** present for Dig byte-level inspection. Preserve the historical `REGISTRATION_CHECK.json` unchanged as its earlier-time record.
 
 ### Arithmetic and domain
 
@@ -44,6 +44,6 @@ The low-lambda centre column `lambda in [2/5,119/200]` joins at an included endp
 ## Archival status / allowed further steps
 
 - **Reported mathematical governance status:** `CHAT_AUDIT_PASS / JUDGE_CLOSED_CONDITIONAL_ON_P1` (per user report).
-- **Original audit document registration:** `PENDING_ORIGINAL_SOURCE`. This Dig readback is supplementary, not a replacement for the chat-authored record.
-- On receipt of the actual `CHAT_AUDIT_D5_CENTER_HILAM_20261106.md`, add its exact bytes under this directory, verify and record complete normalized-cover hashes and source provenance, and replace the provisional references with fixed Git commit/blob identities.
+- **Original audit document registration:** `PENDING_ORIGINAL_SOURCE`. User-supplied expected SHA-256 for `CHAT_AUDIT_D5_CENTER_HILAM_20261106.md`: `7eae9f035cac17f806cbdef372f49c68d372918d469d6ec769fa6756459249c4`. The file bytes were not available, so this hash is **not yet verified against the original**. This Dig readback is supplementary, not a replacement for the chat-authored record.
+- On receipt of the actual `CHAT_AUDIT_D5_CENTER_HILAM_20261106.md`, add its exact bytes under this directory, independently compare the already recorded complete normalized-cover hashes and source provenance, and replace the provisional references with fixed Git commit/blob identities.
 - Do not imply `UPSTREAM_PINS.md` verified promotion, D4 global CLOSED, or D5 V4 FREEZE/full run authorization.
