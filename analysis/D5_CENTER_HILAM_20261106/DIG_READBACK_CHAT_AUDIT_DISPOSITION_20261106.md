@@ -1,6 +1,6 @@
 # Dig readback — D5 high-lambda centre column audit disposition (2026-11-06)
 
-**Provenance:** Dig-prepared readback of the user's report of chat's completed independent audit and Judge's ruling. **This is not the original chat-authored audit** `CHAT_AUDIT_D5_CENTER_HILAM_20261106.md`. That original was not accessible in GitHub, the available file library or the connected external PC at registration time. No claim is made that Dig has inspected the missing document.
+**Provenance (historical):** Dig prepared this readback before the original chat-authored audit was available. **This readback is not the chat audit original.** The original [CHAT_AUDIT_D5_CENTER_HILAM_20261106.md](CHAT_AUDIT_D5_CENTER_HILAM_20261106.md) has subsequently been registered byte-identically (commit `24c6c8b5c4b59573fea29033eac6bc237b53ab0d`, SHA-256 `7eae9f035cac17f806cbdef372f49c68d372918d469d6ec769fa6756459249c4`, git blob SHA `d0b3cb6ba322e1aeb70dbfb96565d5bdec9ff5e8`). This earlier readback remains an archival chronology record.
 
 **Reported ruling (user relay):** chat audit PASS; Judge CLOSED for the centre column on `lambda in [2/5,33/50]`, **conditional on the inherited P1 normalization and analytic regularity/derivative-interchange assumptions**. This applies to the centre column only, not all D5 or D4.
 
@@ -26,7 +26,7 @@ Original fixed-file pins in the instruction (different **bytes**):
 - M40': `2082e711a4d0e9a68947ed40ed358aff6eb9bab2f6fe34213b068ea3b8a03d87`
 - M22': `d7fc47723f35600a0753984e60ca0c1c0494fab3515494f744412a5fc4925580`
 
-**User-supplied normalized geometry SHA-256 (64 hexadecimal digits, not independently recomputed by Dig):** M40' (416 boxes) `8bd4725fe89408f35796607db6d3cb4c1ca384a61e1567327d946e93b780be07`; M22' (52 boxes) `8886d04376b60172df71502ce4c2cbabc7c2cd498f15e1c1b4a4aeda2c55446a`. Normalization is the sorted list of box endpoints rendered as strings of reduced rational fractions. The user reports that chat's independent audit compared the canonical endpoint lists and the producer/verifier results one-to-one and found matching geometry; the raw-byte cover file hashes above remain different, due to serialization/key/order. The original independent audit document is still **not** present for Dig byte-level inspection. Preserve the historical `REGISTRATION_CHECK.json` unchanged as its earlier-time record.
+**User-supplied normalized geometry SHA-256 (64 hexadecimal digits, not independently recomputed by Dig):** M40' (416 boxes) `8bd4725fe89408f35796607db6d3cb4c1ca384a61e1567327d946e93b780be07`; M22' (52 boxes) `8886d04376b60172df71502ce4c2cbabc7c2cd498f15e1c1b4a4aeda2c55446a`. Normalization is the sorted list of box endpoints rendered as strings of reduced rational fractions. The user reports that chat's independent audit compared the canonical endpoint lists and the producer/verifier results one-to-one and found matching geometry; the raw-byte cover file hashes above remain different, due to serialization/key/order. The original independent audit document is now registered and Dig verified its byte identity against SHA-256. The user-supplied canonical hashes are recorded verbatim from that audit; Dig has not independently recomputed the geometry-list digest. Preserve the historical `REGISTRATION_CHECK.json` unchanged as its earlier-time record.
 
 ### Arithmetic and domain
 
@@ -44,6 +44,6 @@ The low-lambda centre column `lambda in [2/5,119/200]` joins at an included endp
 ## Archival status / allowed further steps
 
 - **Reported mathematical governance status:** `CHAT_AUDIT_PASS / JUDGE_CLOSED_CONDITIONAL_ON_P1` (per user report).
-- **Original audit document registration:** `PENDING_ORIGINAL_SOURCE`. User-supplied expected SHA-256 for `CHAT_AUDIT_D5_CENTER_HILAM_20261106.md`: `7eae9f035cac17f806cbdef372f49c68d372918d469d6ec769fa6756459249c4`. The file bytes were not available, so this hash is **not yet verified against the original**. This Dig readback is supplementary, not a replacement for the chat-authored record.
-- On receipt of the actual `CHAT_AUDIT_D5_CENTER_HILAM_20261106.md`, add its exact bytes under this directory, independently compare the already recorded complete normalized-cover hashes and source provenance, and replace the provisional references with fixed Git commit/blob identities.
+- **Original audit document registration:** `REGISTERED_BYTE_EXACT` as [CHAT_AUDIT_D5_CENTER_HILAM_20261106.md](CHAT_AUDIT_D5_CENTER_HILAM_20261106.md), commit `24c6c8b5c4b59573fea29033eac6bc237b53ab0d`. SHA-256 `7eae9f035cac17f806cbdef372f49c68d372918d469d6ec769fa6756459249c4`, Git blob SHA `d0b3cb6ba322e1aeb70dbfb96565d5bdec9ff5e8`, both verified at registration and readback. This earlier Dig note is supplementary.
+- Original received, SHA-256 verified, and registered; the registered chat audit is now the primary record. Historical raw cover-file SHA mismatches are retained as provenance; the original audit records normalized geometry equivalence.
 - Do not imply `UPSTREAM_PINS.md` verified promotion, D4 global CLOSED, or D5 V4 FREEZE/full run authorization.
