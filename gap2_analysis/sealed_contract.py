@@ -182,6 +182,95 @@ def _verify_right_cover(ll, lr, tp, guards):
                 fail("RIGHT_EXTERIOR_COVERAGE_FAILED")
 
 
+def _receipt_count_candidates(receipt):
+    """F7: derive count candidates by *meaning* of receipt extract keys.
+
+    Schema may nest producer/checker summaries. No sealed data is inspected
+    before Judge FREEZE. Missing/unrecognised count keys are FAIL-CLOSED.
+    Use only count fields or explicit count-bearing collections; do not
+    mistake numeric work totals or a bool for a slab count.
+    """
+    counts = {"accepted": [], "right_clamped": []}
+    def token(name):
+        return str(name).lower().replace("-", "_").replace(" ", "_")
+    accepted_keys = {
+        "accepted", "accepted_count", "accepted_slabs", "accepted_slab_count",
+        "accepted_leaves", "accepted_leaf_count", "accepted_total",
+        "n_accepted", "accepted_count_total", "accepted_slab_total",
+    }
+    right_keys = {
+        "right_clamp", "right_clamps", "right_clamped",
+        "right_clamp_count", "right_clamped_count", "right_clamped_slabs",
+        "right_clamped_slab_count", "right_clamp_events",
+        "right_clamp_event_count", "right_clamp_total",
+        "right_clamped_coarse", "right_clamped_coarse_indices",
+    }
+    def walk(value, path=()):
+        if isinstance(value, dict):
+            for k,v in value.items():
+                parts = path + (token(k),)
+                leaf = parts[-1]
+                clamp_context = any('clamp' in n for n in parts[:-1])
+                label = (
+                    "accepted" if leaf in accepted_keys else
+                    "right_clamped" if leaf in right_keys or (
+                        clamp_context and leaf in ("right", "right_count", "right_events",
+                                                  "right_slabs", "right_clamped")
+                    ) else None
+                )
+                if label:
+                    if isinstance(v, int) and not isinstance(v, bool):
+                        counts[label].append(("/".join(parts), v))
+                    elif isinstance(v, list):
+                        counts[label].append(("/".join(parts), len(v)))
+                    # A nested dictionary is not necessarily a count:
+                    # recurse instead of treating all nested keys as counts.
+                walk(v, parts)
+        elif isinstance(value, list):
+            # If the list is already counted under a meaningful name, do not
+            # double count its elements; nested structures may still contain
+            # independent summary fields.
+            for i,v in enumerate(value):
+                if isinstance(v, dict):
+                    walk(v, path + (str(i),))
+    walk(receipt)
+    return counts
+
+
+def verify_receipt_extract_counts(receipt, producer, checker):
+    """F7: receipt counts must independently agree with BOTH sealed ledgers.
+
+    This is a fail-closed schema-tolerant parser. An ambiguous, missing or
+    unsupported receipt schema forces a code audit; never infer 159/35 from
+    the fixed expectations alone.
+    """
+    counts = _receipt_count_candidates(receipt)
+    producer_accepted, checker_accepted = len(producer), len(checker)
+    producer_clamped = sum(int(v[1]) for v in producer.values())
+    checker_clamped = sum(int(v[1]) for v in checker.values())
+    if (producer_accepted != checker_accepted or
+            producer_clamped != checker_clamped):
+        fail("RECEIPT_LEDGER_LINEAGE_COUNT_MISMATCH")
+    for field, expected in (
+        ("accepted", producer_accepted),
+        ("right_clamped", producer_clamped),
+    ):
+        found = counts[field]
+        if not found:
+            fail("RECEIPT_EXTRACT_COUNT_SCHEMA_OPEN:" + field)
+        if any(actual != expected for _,actual in found):
+            fail("RECEIPT_EXTRACT_COUNT_MISMATCH:" + field)
+    if producer_accepted != EXPECTED_ACCEPTED or producer_clamped != EXPECTED_CLAMPED:
+        fail("RECEIPT_EXTRACT_EXPECTATION_MISMATCH")
+    return {
+        "accepted_count": producer_accepted,
+        "right_clamped_count": producer_clamped,
+        "accepted_count_receipt_paths": [path for path,_ in counts["accepted"]],
+        "right_clamped_count_receipt_paths": [path for path,_ in counts["right_clamped"]],
+        "verdict": "RECEIPT_EXTRACT_AND_TWO_LEDGER_COUNTS_MATCH",
+    }
+
+
 def load_verified_parents(sealed_root: Path):
     """L0(c)/(d) executable validation — must not be called before Judge FREEZE."""
     sealed_root = sealed_root.resolve()
@@ -205,6 +294,7 @@ def load_verified_parents(sealed_root: Path):
     receipt = json.loads((sealed_root / "c1b_receipt_extract.json").read_text())
     if not isinstance(receipt, dict) or not receipt:
         fail("RECEIPT_EXTRACT_SCHEMA_OPEN")
+    receipt_counts = verify_receipt_extract_counts(receipt, p, c)
 
     parents = []
     for ident, (pp, clamped, tp) in sorted(p.items(), key=lambda x: (x[0][2], x[0][3])):
@@ -225,4 +315,5 @@ def load_verified_parents(sealed_root: Path):
     if len(parents) != EXPECTED_UNCLAMPED:
         fail("LEDGER_UNCLAMPED_COUNT_MISMATCH")
     return parents, manifest, {"receipt_sha256": manifest["c1b_receipt_extract.json"],
+                               "receipt_counts": receipt_counts,
                                "right_exterior": "producer_checker_both_closed_boxes"}

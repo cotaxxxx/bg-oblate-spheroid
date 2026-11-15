@@ -10,8 +10,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 PARENT = "26d81e1049340d44ef7f08ae8e17d0692983395b"
-BASE_NEW = "ff07e097c098ace4051b04b76d410713fb59490a"
-PREVIOUS_NEW = "45617d0ad8aa5c61cf858556791b38794929f9a7"
+BASE_NEW = "3bd5113e7d26e2860ddb8228904d977842aef541"
+PREVIOUS_NEW = "ff07e097c098ace4051b04b76d410713fb59490a"
+PREVIOUS_PREVIOUS_NEW = "45617d0ad8aa5c61cf858556791b38794929f9a7"
 
 EXPECTED_CHANGED = frozenset({
     "gap1_producer/global_axial_c1b_kernel.py",
@@ -58,8 +59,11 @@ def runtime_identity(kernel):
     if expected_parent != BASE_NEW:
         raise RuntimeError("GAP2_IMPLEMENTATION_PARENT_MISMATCH")
     previous_parent = git("rev-parse", BASE_NEW + "^")
-    original_parent = git("rev-parse", BASE_NEW + "^^")
-    if previous_parent != PREVIOUS_NEW or original_parent != PARENT:
+    previous_previous_parent = git("rev-parse", BASE_NEW + "^^")
+    original_parent = git("rev-parse", BASE_NEW + "^^^")
+    if (previous_parent != PREVIOUS_NEW
+            or previous_previous_parent != PREVIOUS_PREVIOUS_NEW
+            or original_parent != PARENT):
         raise RuntimeError("RUN4_PARENT_MISMATCH")
     if git("status", "--porcelain=v1", "--untracked-files=all"):
         raise RuntimeError("RUNTIME_WORKTREE_NOT_CLEAN")

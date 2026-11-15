@@ -9,11 +9,13 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 from collections import defaultdict
 from fractions import Fraction
 from pathlib import Path
 
 from gap1_analysis.c1b_resumable_driver import Ledger
+from gap2_analysis import sealed_contract as seal
 
 EXPECTED_PARENTS = 124
 SYNTHETIC_PARENTS = 2
@@ -39,7 +41,7 @@ def exact(value):
         stop("INVALID_EXACT_FRACTION")
 
 
-def read_lineage(run_dir, role, *, synthetic=False):
+def read_lineage(run_dir, role, *, synthetic=False, judge_ruling_sha256=None):
     manifest_path = run_dir / "manifest.json"
     ledger_path = run_dir / "ledger.jsonl"
     m = json.loads(manifest_path.read_text())
@@ -55,6 +57,16 @@ def read_lineage(run_dir, role, *, synthetic=False):
     if synthetic and (m.get("input_sha256") != SYNTHETIC_INPUT_SHA
                       or m.get("judge_ruling_sha256") != SYNTHETIC_RULING):
         stop("SYNTHETIC_NOT_EVIDENCE_PINS_REQUIRED")
+    if not synthetic:
+        # H1: independently pin all four sealed inputs to the predeclared
+        # full-length SHA256 values, never just to each other's manifests.
+        if m.get("input_sha256") != seal.PINNED:
+            stop("SEALED_INPUT_FIXED_SHA_MISMATCH:" + role)
+        if (not isinstance(judge_ruling_sha256, str)
+                or re.fullmatch(r"[0-9a-f]{64}", judge_ruling_sha256) is None):
+            stop("JUDGE_FREEZE_SHA_REQUIRED")
+        if m.get("judge_ruling_sha256") != judge_ruling_sha256:
+            stop("JUDGE_FREEZE_SHA_MISMATCH:" + role)
     if m.get("ledger_sha256") != sha256(ledger_path):
         stop("LEDGER_SHA256:" + role)
     if m.get("ledger_bytes") != ledger_path.stat().st_size:
@@ -220,9 +232,15 @@ def validate_tree(parents, recs, role):
     return report
 
 
-def compare(producer_dir, checker_dir, *, synthetic=False):
-    pm, pp, pr, p_manifest_sha = read_lineage(producer_dir, "producer", synthetic=synthetic)
-    cm, cp, cr, c_manifest_sha = read_lineage(checker_dir, "checker", synthetic=synthetic)
+def compare(producer_dir, checker_dir, *, synthetic=False, judge_ruling_sha256=None):
+    if synthetic and judge_ruling_sha256 is not None:
+        stop("SYNTHETIC_MUST_NOT_HAVE_JUDGE_PIN")
+    pm, pp, pr, p_manifest_sha = read_lineage(
+        producer_dir, "producer", synthetic=synthetic,
+        judge_ruling_sha256=judge_ruling_sha256)
+    cm, cp, cr, c_manifest_sha = read_lineage(
+        checker_dir, "checker", synthetic=synthetic,
+        judge_ruling_sha256=judge_ruling_sha256)
     for key in ("input_sha256", "judge_ruling_sha256", "parents",
                 "expected_parent_slabs", "accepted_parent_slabs"):
         if pm.get(key) != cm.get(key):
@@ -285,9 +303,14 @@ def main():
     ap.add_argument("--output", type=Path, required=True)
     ap.add_argument("--synthetic-two-parent", action="store_true",
                     help="Only for two NOT_EVIDENCE parents; cannot certify a real run")
+    ap.add_argument("--judge-ruling-sha256",
+                    help="Required for SEALED; full 64-character SHA256 of the Judge FREEZE ruling")
     a = ap.parse_args()
+    if not a.synthetic_two_parent and not a.judge_ruling_sha256:
+        ap.error("--judge-ruling-sha256 is mandatory for SEALED comparisons")
     result = compare(a.producer_run, a.checker_run,
-                     synthetic=a.synthetic_two_parent)
+                     synthetic=a.synthetic_two_parent,
+                     judge_ruling_sha256=a.judge_ruling_sha256)
     if a.output.exists():
         stop("OUTPUT_ALREADY_EXISTS")
     a.output.parent.mkdir(parents=True, exist_ok=True)
