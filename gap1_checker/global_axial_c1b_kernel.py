@@ -1792,23 +1792,40 @@ def predictor_accept(tc, root):
           "mid_error", err, "limit", PRED_ACCEPT)
     return ok, err
 
-def endpoint_partition():
-    # [DIFF-D] fixed exact partition t_j = 31/32 + j/512, j = 0..16, of [31/32,1].
+def endpoint_partition(t_e=ENDPOINT_T_SEED):
+    # [GAP2-DELTA] Exact seed-dependent equal subdivision; old run4 case unchanged.
+    if not isinstance(t_e, Fraction) or not T_MID_HI <= t_e < T_HI:
+        return [], False
+    if t_e != ENDPOINT_T_SEED:
+        count = (Fraction(1, 1) - t_e) / ENDPOINT_DT
+        n = -(-count.numerator // count.denominator)
+        if not 1 <= n <= ENDPOINT_N_BOXES:
+            return [], False
+        dt = (T_HI - t_e) / n
+        pts = [t_e + j * dt for j in range(n + 1)]
+        ok = (pts[-1] == T_HI and 0 < dt <= ENDPOINT_DT and
+              len(pts) == n + 1 and all(pts[j + 1] - pts[j] == dt for j in range(n)))
+        return [(pts[j], pts[j + 1]) for j in range(n)], ok
+    # [RUN4-IDENTICAL] t_j = 31/32 + j/512, j = 0..16.
     points = [ENDPOINT_T_SEED + j * ENDPOINT_DT for j in range(ENDPOINT_N_BOXES + 1)]
     ok = (ENDPOINT_T_SEED == T_MID_HI and points[-1] == T_HI and len(points) == ENDPOINT_N_BOXES + 1
           and all(b - a == ENDPOINT_DT for a, b in zip(points, points[1:])))
     return [(points[j], points[j + 1]) for j in range(ENDPOINT_N_BOXES)], ok
 
-def endpoint_gate(slab):
+def endpoint_gate(slab, t_e=ENDPOINT_T_SEED):
     # [DIFF-D] cumulative mean-value endpoint gate on [31/32,1] x slab:
     #   U_cum = sup g(31/32, slab) + sum_j (1/512) * max(0, sup_{Q_j} Gt),
     # with one direct g_box (the seed) and all 16 gt_box enclosures; the only success condition is U_cum < 0.
     # No direct g_box inside (31/32,1), no C_Lambda(1-t), no B_ob receipt gate, no t refinement.
-    boxes, partition_ok = endpoint_partition()
-    rec = {"endpoint_partition_id": ENDPOINT_PARTITION_ID, "endpoint_seed_t": ENDPOINT_T_SEED,
+    boxes, partition_ok = endpoint_partition(t_e)
+    rec = {"endpoint_partition_id": (ENDPOINT_PARTITION_ID if t_e == ENDPOINT_T_SEED
+                                         else "GAP2_ENDPOINT_VARIABLE_EQUAL_WIDTH_V1"), "endpoint_seed_t": t_e,
            "endpoint_seed_g": None, "endpoint_seed_g_upper": None, "endpoint_gt_boxes": [],
            "endpoint_contributions": [], "endpoint_cumulative_mvt_upper": None,
            "endpoint_pass": False, "endpoint_reason": None, "endpoint_work": 0}
+    if partition_ok and t_e != ENDPOINT_T_SEED:
+        rec["endpoint_n_boxes"] = len(boxes)
+        rec["endpoint_delta_t"] = boxes[0][1] - boxes[0][0]
     if not partition_ok:
         rec["endpoint_reason"] = "ENDPOINT_PARTITION_MISMATCH"
         return False, rec, 0
@@ -1817,7 +1834,7 @@ def endpoint_gate(slab):
     guarded = False
     seed = None
     try:
-        value, c = g_box(ENDPOINT_T_SEED, ENDPOINT_T_SEED, slab.ll, slab.lr, ENDPOINT_SEED_PANELS); work += c
+        value, c = g_box(t_e, t_e, slab.ll, slab.lr, ENDPOINT_SEED_PANELS); work += c
         if _arb_bounds_finite(value):
             seed = value
             rec["endpoint_seed_g"] = _arb_snapshot(value)
@@ -1858,7 +1875,7 @@ def endpoint_gate(slab):
         seed_upper = seed.upper()
         rec["endpoint_seed_g_upper"] = _arb_exact_fraction(seed_upper)
         total = seed_upper
-        dt = base._point(ENDPOINT_DT)
+        dt = base._point(boxes[0][1] - boxes[0][0])
         for upper in uppers:
             contribution = arb(0) if upper <= 0 else upper
             rec["endpoint_contributions"].append(_arb_exact_fraction(contribution))
@@ -1872,7 +1889,7 @@ def endpoint_gate(slab):
         else:
             rec["endpoint_pass"] = True
             rec["endpoint_reason"] = "PASS"
-    print("GAP1_ENDPOINT_GATE", slab.coarse, slab.depth, slab.ll, slab.lr,
+    print("GAP1_ENDPOINT_GATE" if t_e == ENDPOINT_T_SEED else "GAP2_ENDPOINT_GATE", slab.coarse, slab.depth, slab.ll, slab.lr,
           "PASS" if rec["endpoint_pass"] else "FAIL", "reason", rec["endpoint_reason"],
           "seed_upper", rec["endpoint_seed_g_upper"], "cumulative_upper", rec["endpoint_cumulative_mvt_upper"],
           "work", work)

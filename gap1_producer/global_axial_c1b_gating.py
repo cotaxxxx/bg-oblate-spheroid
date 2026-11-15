@@ -1008,3 +1008,29 @@ def main(kernel, lineage):
     if not args.run_dir:
         raise SystemExit("--run-dir required")
     run_full(kernel, lineage, args.run_dir)
+
+
+# [GAP2-V4R2] Adaptor only. No alternate sign gate or C1b proof is introduced.
+def gap2_endpoint_record(kernel, slab, t_e, parent_slab_id):
+    """Invoke the lineage-local generalized endpoint gate once.
+
+    The caller supplies a pinned parent t_e to every lambda child. No input
+    is inferred from a child or from the other numerical lineage.
+    """
+    if not isinstance(t_e, Fraction) or not kernel.T_MID_HI <= t_e < kernel.T_HI:
+        raise RuntimeError("ENDPOINT_PARTITION_MISMATCH")
+    if not isinstance(parent_slab_id, str) or not parent_slab_id:
+        raise RuntimeError("SEALED_LEDGER_DRIVER_MISMATCH")
+    success, evidence, work = kernel.endpoint_gate(slab, t_e=t_e)
+    if evidence.get("endpoint_seed_t") != t_e or evidence.get("endpoint_work") != work:
+        raise RuntimeError("CONTRACT_MISMATCH")
+    return {
+        "schema": "C_GAP2_ENDPOINT_V4R2_1",
+        "lineage": "producer",
+        "parent_slab_id": parent_slab_id,
+        "slab": slab_payload(slab),
+        "t_e": persistence.rational_text(t_e),
+        "decision": "ACCEPT" if success else "INCONCLUSIVE",
+        "evidence": _gap1_value(evidence),
+        "work": int(work),
+    }
