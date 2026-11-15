@@ -16,6 +16,9 @@ from pathlib import Path
 from gap1_analysis.c1b_resumable_driver import Ledger
 
 EXPECTED_PARENTS = 124
+SYNTHETIC_PARENTS = 2
+SYNTHETIC_INPUT_SHA = {"SYNTHETIC_INPUT_ONLY": "NOT_SEALED_C1B"}
+SYNTHETIC_RULING = "SYNTHETIC_NO_JUDGE_FREEZE"
 
 
 def stop(message):
@@ -36,15 +39,22 @@ def exact(value):
         stop("INVALID_EXACT_FRACTION")
 
 
-def read_lineage(run_dir, role):
+def read_lineage(run_dir, role, *, synthetic=False):
     manifest_path = run_dir / "manifest.json"
     ledger_path = run_dir / "ledger.jsonl"
     m = json.loads(manifest_path.read_text())
     manifest_sha256 = sha256(manifest_path)  # reported in the cross-lineage verdict
     if m.get("role") != role or m.get("schema") != "C_GAP2_V4R2_RUN_V1":
         stop("MANIFEST_SCHEMA:" + role)
-    if m.get("status") != "CANDIDATE_NOT_JUDGE_ACCEPTED":
+    target_status = ("SYNTHETIC_COMPLETE_NOT_EVIDENCE" if synthetic
+                     else "CANDIDATE_NOT_JUDGE_ACCEPTED")
+    target_mode = "SYNTHETIC_NOT_EVIDENCE" if synthetic else "SEALED"
+    expected_count = SYNTHETIC_PARENTS if synthetic else EXPECTED_PARENTS
+    if m.get("status") != target_status or m.get("mode") != target_mode:
         stop("LINEAGE_NOT_COMPLETED:" + role)
+    if synthetic and (m.get("input_sha256") != SYNTHETIC_INPUT_SHA
+                      or m.get("judge_ruling_sha256") != SYNTHETIC_RULING):
+        stop("SYNTHETIC_NOT_EVIDENCE_PINS_REQUIRED")
     if m.get("ledger_sha256") != sha256(ledger_path):
         stop("LEDGER_SHA256:" + role)
     if m.get("ledger_bytes") != ledger_path.stat().st_size:
@@ -54,20 +64,34 @@ def read_lineage(run_dir, role):
     identity = m.get("identity_before")
     if not isinstance(identity, dict) or identity.get("clean_status") is not True:
         stop("RUNTIME_IDENTITY_MISSING:" + role)
-    ledger = Ledger(ledger_path)  # validates run4-style SHA-256 chain
-    if len(ledger.records) < 3:
+    ledger = Ledger(ledger_path)  # validates complete run4-style SHA chain
+    # G5: Ledger.append can add one lscpu_raw_trace immediately after header
+    # or segment_end. It is included in the hash chain, not a mathematical
+    # result; forbid it in any other position.
+    cleaned = []
+    for item in ledger.records:
+        if item["record_type"] == "lscpu_raw_trace":
+            if (not cleaned or cleaned[-1]["record_type"]
+                    not in ("header", "segment_end")):
+                stop("UNEXPECTED_LSCPU_TRACE_POSITION:" + role)
+            continue
+        cleaned.append(item)
+    if len(cleaned) < 3:
         stop("LEDGER_TOO_SHORT:" + role)
-    header, *body = ledger.records
+    header, *body = cleaned
     if header["record_type"] != "header" or body[-1]["record_type"] != "segment_end":
         stop("LEDGER_FORMAT:" + role)
+    if header["payload"].get("mode") != target_mode:
+        stop("LEDGER_MODE_MISMATCH:" + role)
     if body[-1]["payload"].get("reason") != "COMPLETED":
         stop("SEGMENT_NOT_COMPLETED:" + role)
     if header["payload"].get("identity_before") != identity:
         stop("LEDGER_HEADER_IDENTITY:" + role)
     parents = header["payload"].get("parents")
-    if not isinstance(parents, list) or len(parents) != EXPECTED_PARENTS:
+    if not isinstance(parents, list) or len(parents) != expected_count:
         stop("HEADER_PARENT_COUNT:" + role)
-    if m.get("parents") != parents or m.get("accepted_parent_slabs") != EXPECTED_PARENTS:
+    if (m.get("parents") != parents or m.get("accepted_parent_slabs") != expected_count
+            or m.get("expected_parent_slabs") != expected_count):
         stop("MANIFEST_PARENT_COUNT:" + role)
     if header["payload"].get("sealed_input_sha256") != m.get("input_sha256"):
         stop("INPUT_PIN_MISMATCH:" + role)
@@ -79,6 +103,51 @@ def read_lineage(run_dir, role):
     if m.get("attempted") != len(recs):
         stop("ATTEMPTED_COUNT_MISMATCH:" + role)
     return m, parents, recs, manifest_sha256
+
+
+def exact_partition(te):
+    """G4: independently construct equal-width t-cells with rational arithmetic."""
+    q = 512 * (1 - te)
+    n = (q.numerator + q.denominator - 1) // q.denominator
+    if not (1 <= n <= 16 and Fraction(31, 32) <= te < 1):
+        stop("INVALID_ENDPOINT_SEED_OR_N")
+    dt = (1 - te) / n
+    return [(te + j * dt, te + (j + 1) * dt) for j in range(n)], dt
+
+
+def check_gate_arithmetic(ev, te, parent_id):
+    """Verify the printed gate using exact fractions, not float or Arb."""
+    boxes, dt = exact_partition(te)
+    actual = ev.get("endpoint_gt_boxes")
+    contributions = ev.get("endpoint_contributions")
+    if not isinstance(actual, list) or len(actual) != len(boxes):
+        stop("GT_PARTITION_LENGTH:" + parent_id)
+    if not isinstance(contributions, list) or len(contributions) != len(boxes):
+        stop("GT_CONTRIBUTION_COUNT:" + parent_id)
+    seed = exact(ev.get("endpoint_seed_g_upper"))
+    if ev.get("endpoint_n_boxes") is not None and ev["endpoint_n_boxes"] != len(boxes):
+        stop("ENDPOINT_N_MISMATCH:" + parent_id)
+    if ev.get("endpoint_delta_t") is not None and exact(ev["endpoint_delta_t"]) != dt:
+        stop("ENDPOINT_DT_MISMATCH:" + parent_id)
+    terms = []
+    for j, (cell, planned) in enumerate(zip(actual, boxes)):
+        got = cell.get("t_cell")
+        if (cell.get("j") != j or not isinstance(got, list) or len(got) != 2
+                or (exact(got[0]), exact(got[1])) != planned):
+            stop("GT_PARTITION_MISMATCH:" + parent_id)
+        if cell.get("dispatch") != ("endpoint_corner_ordinary" if j == len(boxes)-1 else "ordinary"):
+            stop("GT_CHART_DISPATCH_MISMATCH:" + parent_id)
+        u = exact(cell.get("upper"))
+        term = max(Fraction(0), u)
+        if exact(contributions[j]) != term:
+            stop("GT_CONTRIBUTION_MISMATCH:" + parent_id)
+        terms.append(term)
+    # Arb rounding may increase the recorded cumulative upper bound.
+    exact_cumulative = seed + dt * sum(terms, Fraction(0))
+    recorded = exact(ev.get("endpoint_cumulative_mvt_upper"))
+    if not (exact_cumulative <= recorded < 0 and seed < 0):
+        stop("CUMULATIVE_EXACT_ARITHMETIC_MISMATCH:" + parent_id)
+    return seed, recorded
 
 
 def validate_tree(parents, recs, role):
@@ -122,9 +191,7 @@ def validate_tree(parents, recs, role):
             cum_raw = ev.get("endpoint_cumulative_mvt_upper")
             decision = record.get("decision")
             if decision == "ACCEPT":
-                seed, cum = exact(seed_raw), exact(cum_raw)
-                if not seed < 0 or not cum < 0:
-                    stop("POSITIVE_ACCEPT:" + parent_id)
+                seed, cum = check_gate_arithmetic(ev, te, parent_id)
                 max_seed = seed if max_seed is None else max(max_seed, seed)
                 max_cum = cum if max_cum is None else max(max_cum, cum)
             if decision == "ACCEPT":
@@ -153,9 +220,9 @@ def validate_tree(parents, recs, role):
     return report
 
 
-def compare(producer_dir, checker_dir):
-    pm, pp, pr, p_manifest_sha = read_lineage(producer_dir, "producer")
-    cm, cp, cr, c_manifest_sha = read_lineage(checker_dir, "checker")
+def compare(producer_dir, checker_dir, *, synthetic=False):
+    pm, pp, pr, p_manifest_sha = read_lineage(producer_dir, "producer", synthetic=synthetic)
+    cm, cp, cr, c_manifest_sha = read_lineage(checker_dir, "checker", synthetic=synthetic)
     for key in ("input_sha256", "judge_ruling_sha256", "parents",
                 "expected_parent_slabs", "accepted_parent_slabs"):
         if pm.get(key) != cm.get(key):
@@ -194,7 +261,8 @@ def compare(producer_dir, checker_dir):
         })
     return {
         "schema": "C_GAP2_CROSS_LINEAGE_V1",
-        "verdict": "COMPARE_PASS_NOT_JUDGE_CLOSED",
+        "verdict": ("SYNTHETIC_COMPARE_PASS_NOT_EVIDENCE" if synthetic
+                    else "COMPARE_PASS_NOT_JUDGE_CLOSED"),
         "parent_count": len(rows),
         "producer_manifest_sha256": p_manifest_sha,
         "checker_manifest_sha256": c_manifest_sha,
@@ -215,8 +283,11 @@ def main():
     ap.add_argument("--producer-run", type=Path, required=True)
     ap.add_argument("--checker-run", type=Path, required=True)
     ap.add_argument("--output", type=Path, required=True)
+    ap.add_argument("--synthetic-two-parent", action="store_true",
+                    help="Only for two NOT_EVIDENCE parents; cannot certify a real run")
     a = ap.parse_args()
-    result = compare(a.producer_run, a.checker_run)
+    result = compare(a.producer_run, a.checker_run,
+                     synthetic=a.synthetic_two_parent)
     if a.output.exists():
         stop("OUTPUT_ALREADY_EXISTS")
     a.output.parent.mkdir(parents=True, exist_ok=True)

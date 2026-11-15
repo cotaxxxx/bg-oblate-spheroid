@@ -101,17 +101,40 @@ def _write_manifest(path, payload):
 
 
 def full_run(kernel, gating, role, parent_dir, run_dir, ruling_sha):
+    """Authorized SEALED route: identity first; L0(c) only after Judge FREEZE."""
     if run_dir.is_relative_to(parent_dir) or run_dir.is_relative_to(Path("/run/media")):
+        raise RuntimeError("SEALED_INPUT_WRITE_PROHIBITED")
+    _static_check(kernel, gating)
+    # F2: pin provenance before touching the sealed ledger.
+    identity_before = runtime_identity(kernel)
+    parents, inputs, receipt = seal.load_verified_parents(parent_dir)
+    return run_parent_set(kernel, gating, role, parents, inputs, receipt, run_dir,
+                          ruling_sha, mode="SEALED", identity_before=identity_before)
+
+
+def run_parent_set(kernel, gating, role, parents, inputs, receipt, run_dir,
+                   ruling_sha, *, mode, identity_before=None,
+                   synthetic_forced_abort=False):
+    """Common real kernel/gating/Ledger/manifest path for sealed and synthetic inputs.
+
+    SYNTHETIC uses ONLY in-memory parents, never the sealed loader or Judge
+    authorization; every artifact is permanently marked NOT_EVIDENCE.
+    """
+    if mode not in ("SEALED", "SYNTHETIC_NOT_EVIDENCE"):
+        raise RuntimeError("UNKNOWN_RUN_MODE")
+    if mode == "SEALED" and (len(parents) != seal.EXPECTED_UNCLAMPED or synthetic_forced_abort):
+        raise RuntimeError("SEALED_PARENT_COUNT_OR_TEST_HOOK_FORBIDDEN")
+    if mode == "SYNTHETIC_NOT_EVIDENCE" and len(parents) != 2:
+        raise RuntimeError("SYNTHETIC_PARENT_COUNT_MISMATCH")
+    if run_dir.is_relative_to(Path("/run/media")) or run_dir.is_relative_to(Path(ROOT_DEFAULT)):
         raise RuntimeError("SEALED_INPUT_WRITE_PROHIBITED")
     if run_dir.exists():
         raise RuntimeError("RUN_DIR_ALREADY_EXISTS_NO_AUTO_RESUME")
     if run_dir.parent.exists() and not os.access(run_dir.parent, os.W_OK):
         raise RuntimeError("RUN_DIR_NOT_WRITABLE")
     _static_check(kernel, gating)
-
-    # F2: record immutable provenance BEFORE L0(c) or any numerical evaluation.
-    identity_before = runtime_identity(kernel)
-    parents, inputs, receipt = seal.load_verified_parents(parent_dir)
+    if identity_before is None:
+        identity_before = runtime_identity(kernel)
     header_parents = _parents_table(parents)
     kernel.ctx.prec = kernel.BITS
     kernel.base.ctx.prec = kernel.BITS
@@ -119,7 +142,7 @@ def full_run(kernel, gating, role, parent_dir, run_dir, ruling_sha):
     run_dir.mkdir(parents=True, exist_ok=False)
     ledger = persistence.Ledger(run_dir / "ledger.jsonl")
     ledger.append("header", {
-        "schema": "C_GAP2_V4R2_RUN_V1", "lineage": role,
+        "schema": "C_GAP2_V4R2_RUN_V1", "lineage": role, "mode": mode,
         "judge_ruling_sha256": ruling_sha,
         "sealed_input_sha256": inputs,
         "identity_before": identity_before,
@@ -131,12 +154,12 @@ def full_run(kernel, gating, role, parent_dir, run_dir, ruling_sha):
     def make_manifest(status, reason, identity_after):
         sha, size = _ledger_digest(ledger.path)
         return {
-            "schema": "C_GAP2_V4R2_RUN_V1", "role": role,
+            "schema": "C_GAP2_V4R2_RUN_V1", "role": role, "mode": mode,
             "status": status, "reason": reason,
             "judge_ruling_sha256": ruling_sha, "input_sha256": inputs,
             "receipt": receipt,
             "parents": header_parents,
-            "expected_parent_slabs": seal.EXPECTED_UNCLAMPED,
+            "expected_parent_slabs": seal.EXPECTED_UNCLAMPED if mode == "SEALED" else 2,
             "accepted_parent_slabs": len(parents),
             "attempted": attempted, "gt_boxes": cells,
             "panel_work": total_work,
@@ -155,8 +178,16 @@ def full_run(kernel, gating, role, parent_dir, run_dir, ruling_sha):
                 attempted += 1
                 item = gating.gap2_endpoint_record(kernel, slab, parent.t_e, parent.id)
                 ev = item["evidence"]
-                if ev["endpoint_seed_t"] != parent.t_e:
+                # G1: gating serializes Fraction to "p/q" text.
+                if (Fraction(ev["endpoint_seed_t"]) != parent.t_e
+                        or Fraction(item["t_e"]) != parent.t_e):
                     raise RuntimeError("CHILD_SEED_INHERITANCE_FAIL")
+                if synthetic_forced_abort:
+                    # G2: exercise the REAL gate and the real ABORT/manifest
+                    # path. Synthetic data only, never available in SEALED.
+                    item["decision"] = "ABORT"
+                    ledger.append("slab_record", item)
+                    raise RuntimeError("SYNTHETIC_FORCED_ABORT_NOT_EVIDENCE")
                 cells += len(ev["endpoint_gt_boxes"])
                 total_work += item["work"]
                 if item["decision"] == "ACCEPT":
@@ -179,7 +210,9 @@ def full_run(kernel, gating, role, parent_dir, run_dir, ruling_sha):
             "gt_boxes": cells, "panel_work": total_work,
             "identity_after": identity_after,
         })
-        result = make_manifest("CANDIDATE_NOT_JUDGE_ACCEPTED", "COMPLETED", identity_after)
+        status = ("CANDIDATE_NOT_JUDGE_ACCEPTED" if mode == "SEALED"
+                  else "SYNTHETIC_COMPLETE_NOT_EVIDENCE")
+        result = make_manifest(status, "COMPLETED", identity_after)
         _write_manifest(run_dir / "manifest.json", result)
         return result
     except Exception as exc:

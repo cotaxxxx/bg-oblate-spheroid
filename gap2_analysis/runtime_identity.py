@@ -10,7 +10,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 PARENT = "26d81e1049340d44ef7f08ae8e17d0692983395b"
-BASE_NEW = "45617d0ad8aa5c61cf858556791b38794929f9a7"
+BASE_NEW = "ff07e097c098ace4051b04b76d410713fb59490a"
+PREVIOUS_NEW = "45617d0ad8aa5c61cf858556791b38794929f9a7"
 
 EXPECTED_CHANGED = frozenset({
     "gap1_producer/global_axial_c1b_kernel.py",
@@ -56,8 +57,9 @@ def runtime_identity(kernel):
     expected_parent = git("rev-parse", "HEAD^")
     if expected_parent != BASE_NEW:
         raise RuntimeError("GAP2_IMPLEMENTATION_PARENT_MISMATCH")
-    original_parent = git("rev-parse", BASE_NEW + "^")
-    if original_parent != PARENT:
+    previous_parent = git("rev-parse", BASE_NEW + "^")
+    original_parent = git("rev-parse", BASE_NEW + "^^")
+    if previous_parent != PREVIOUS_NEW or original_parent != PARENT:
         raise RuntimeError("RUN4_PARENT_MISMATCH")
     if git("status", "--porcelain=v1", "--untracked-files=all"):
         raise RuntimeError("RUNTIME_WORKTREE_NOT_CLEAN")
@@ -70,6 +72,8 @@ def runtime_identity(kernel):
     if not (set(kernel.GAP1_IMPORT_CLOSURE_17) | set(kernel.GAP1_READ_ONLY_PINS)).issubset(
             changed | set(git("ls-tree", "-r", "--name-only", "HEAD").splitlines())):
         raise RuntimeError("IMPORT_CLOSURE_FILE_MISSING")
+    # G3: pinned files are the SAME across both lineages. Do not pollute
+    # this dictionary with role-dependent sys.modules imports.
     blobs = {}
     for rel in sorted(changed | run4):
         path = ROOT / rel
@@ -96,14 +100,18 @@ def runtime_identity(kernel):
             continue
         relative_name = relative.as_posix()
         if relative_name not in blobs:
+            # Audit additional imported repo files, but keep them in the
+            # ROLE-DEPENDENT import_closure dictionary alone.
             if not path.is_file():
                 raise RuntimeError("IMPORT_FILE_MISSING")
             expected = git("rev-parse", "HEAD:" + relative_name)
             actual = git("hash-object", "--", str(path))
             if expected != actual:
                 raise RuntimeError("IMPORT_BLOB_MISMATCH")
-            blobs[relative_name] = {"blob": actual, "sha256": files_sha256(path)}
-        imported[name] = {"path": relative_name, **blobs[relative_name]}
+            entry = {"blob": actual, "sha256": files_sha256(path)}
+        else:
+            entry = blobs[relative_name]
+        imported[name] = {"path": relative_name, **entry}
     return {
         "head": head,
         "direct_parent": expected_parent,

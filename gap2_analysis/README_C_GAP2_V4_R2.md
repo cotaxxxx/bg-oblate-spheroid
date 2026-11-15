@@ -52,3 +52,24 @@ Judge FREEZE後、producer/checker本走が共に完了した後の比較：
 python -m gap2_analysis.lineage_compare --producer-run <RUN_PRODUCER> --checker-run <RUN_CHECKER> --output <RESULT_JSON>
 
 **この文書、実装commit、静的preflightはFREEZE・本走の許可ではない。空白② OPEN / D-OB global OPEN。**
+
+
+## G1〜G5（chat監査 CHAT_AUDIT_C_GAP2_IMPL_FF07E09_20261115.md への対応）
+
+- G1：gating の endpoint_seed_t は有理数文字列なので、駆動部で Fraction に戻して親の t_e と比較。トップレベル t_e も照合し、子の seed 継承を強制する。
+- G2：full_run（Judge FREEZE後の封印入力読込）と run_parent_set（本物の kernel/gating・Ledger・manifest・runtime_identity による共通計算経路）を分離。end_to_end_preflight.py が隣接する合成親2本を流し、producer・checker・compare まで実動作する。別の合成限定フックで、最初の本物の門を評価後に ABORT / segment_end / ABORT_NOT_EVIDENCE を確認する。
+- G3：系統共通のファイル pin と、系統別に実際に import された閉包を別辞書で記録。後者は自分の系統内で前後照合。直親 ff07e09、祖父 45617d0、run4 原親 26d81e1 の関係を固定。
+- G4：比較器が N・Δt・各 t 箱・Gt の upper_j と contribution を厳密分数で再計算し、seed_upper + Δt Σ max(0,U_j) <= recorded_cumulative_upper < 0 を独立に検査。最後の corner dispatch も照合。
+- G5：ハッシュ連鎖そのものの検証を維持し、header・segment_end直後の lscpu_raw_trace のみ数学の台帳から除外。それ以外の未知レコードはFAIL。
+- F7：receipt_extract.json の抽出表自身の件数照合は未実装。封印入力をFREEZE前に読まない契約を維持し、両台帳のaccepted 159、clamped 35、unclamped 124の確認とは区別する。
+
+### G2：chat差分監査後にのみ実行するNOT_EVIDENCE preflight
+
+python -m gap2_analysis.end_to_end_preflight --role producer --run-dir <FRESH_SYNTH_PRODUCER>
+python -m gap2_analysis.end_to_end_preflight --role checker --run-dir <FRESH_SYNTH_CHECKER>
+python -m gap2_analysis.end_to_end_preflight --compare --producer-run <FRESH_SYNTH_PRODUCER> --checker-run <FRESH_SYNTH_CHECKER> --output <NEW_JSON>
+python -m gap2_analysis.end_to_end_preflight --role producer --run-dir <FRESH_SYNTH_ABORT> --force-abort
+
+合成入力は、λ ∈ [1/2, 1/2+1/1600] と隣接区画、t_e = 993/1024 と 63/64 だけ。実C1b台帳と隔離。ABORTフックは合成モードに限り、最初の真の門を評価してからABORTにする。数学的な反例とは解釈しない。
+
+**状態：未監査の修正コード / NOT FROZEN / EXECUTION PROHIBITED / NOT_EVIDENCE。** 数値回帰・合成門の本実行・L0(c)・空白②本走はまだ未実施。
