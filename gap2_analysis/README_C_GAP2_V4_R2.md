@@ -1,45 +1,54 @@
-# C gap 2 v4-r2 — implementation submission (NOT FROZEN)
+# C空白② v4-r2｜F1〜F6 実装修正提出
 
-**Status:** STATIC IMPLEMENTATION SUBMISSION / NOT FROZEN / EXECUTION PROHIBITED / NOT_EVIDENCE.
+**状態：IMPLEMENTATION CANDIDATE / NOT FROZEN / EXECUTION PROHIBITED / NOT_EVIDENCE。**
+原点は凍結run4 26d81e1049340d44ef7f08ae8e17d0692983395b。現実装は45617d0を直親とする追加単一コミットで提出する。
 
-**Base:** `cotaxxxx/bg-oblate-spheroid` `run/c-gap1-v0-5` at `26d81e1049340d44ef7f08ae8e17d0692983395b`. Submit as ONE new commit whose direct parent is that frozen commit. Nothing on the original run4 branch may be rewritten.
+監査：CHAT_AUDIT_C_GAP2_IMPL_45617D0_20261115.md（chat、2026-11-15）。
+kernel・gatingの数学的中身は既監査PASS。g_box、gt_box、精度160/192、次数50、panel8192、chart、U_cum<0は変更しない。
 
-## Scope and allowed diff
+## F1：独立系統の比較器
 
-- Modified both `gap1_{producer,checker}/global_axial_c1b_kernel.py`: add a seed parameter to `endpoint_gate`, allow exact rational `t_e` with `31/32 ≤ t_e < 1`, and construct `N=ceil(512(1-t_e))` equal rational t cells. The old default `31/32` branch preserves **exactly** run4's 16 cells and the old partition ID and output fields.
-- Modified both `gap1_{producer,checker}/global_axial_c1b_gating.py`: add `gap2_endpoint_record` adaptor; existing gap1 paths remain unmodified.
-- Added `gap2_analysis/sealed_contract.py`: SHA-chain/L0(c) loader and fail-closed C1b v2.4 right-exterior CLOSED-box coverage on both lineages. No sealed ledger is read on import.
-- Added `gap2_analysis/endpoint_driver.py` and separate `gap2_producer/driver.py`, `gap2_checker/driver.py`: independent lineage numerical calculations; parent `t_e` passed unchanged to all descendants, same right-first lambda bisection depth≤3. No use of prior producer sign results by checker.
-- Added `gap2_analysis/run4_regression.py`: **NOT YET RUN**. Deterministic run4 first/middle/last accepted endpoint samples; verify full endpoint record, rational strings, work counters and box order against the corresponding run4 producer/checker ledger.
+追加：gap2_analysis/lineage_compare.py
+producer/checkerのmanifest・台帳SHA256とrun4方式のhash chainを検査。124親ごとに双方のt_e一致、双方それぞれのACCEPT葉の厳密分数による被覆、木の完全性、ABORT不在、合格葉のseed/cumulative上界負を必須にする。最悪上界は親・系統別の表にする。片側だけのPASSはFAIL。
 
-**Numerical unchanged:** original `g_box`/`gt_box` sources, 160/192 bit, degree50, 8192 seed/Gt s-panels, corner/ordinary dispatch and sole `U_cum<0` sign gate.
+## F2：実行時の同一性の記録
 
-**Reused frozen 25-blobs table:** `cotaxxxx/bg-spheroid-family` `runs/2026-10-12/C_GAP1_V0_5_RUN4/RUN_COMMIT_25_BLOBS.tsv` SHA256 `ec5b70b6cc8ebd0ab29fc31021ead613526cc3187efe09f1d6a6d795b810dd00`. Four true gate/kernel blobs in that table are `5503bb7d`, `b4bb44bd`, `baffaf49`, `36bb7983`. Run4 old blobs retain their identity in the PARENT, modified copies deliberately have new blob IDs.
+追加：gap2_analysis/runtime_identity.py
+実行前と後にcommit、直親、working tree clean、変更・追加ファイルのgit blob/sha256、run4の25blob、読み込まれたrepo内import closure、Python・python-flint・mpmath・OS環境を記録。前後の不一致はNOT_EVIDENCEとし、合格に使わない。
 
-**External frozen input** (L0(a)(b) confirmed SHA 4/4, L0(c)(d) UNREAD until Judge authorizes): `cotaxxxx/bg-spheroid-family`, `evidence/c-gap2-sealed-inputs-20261115`, `ff09197`. This implementation does NOT pin a guessed receipt schema: unknown receipt, right-exterior rows, or incomplete proof coverage stop rather than being treated as evidence.
+## F3：回帰の静的・数値的対照
 
-## Static checks (only; no sealed data read)
+- endpoint_driver.py の静的preflightは一般の分割公式からt_e=31/32のrun4の16箱との完全一致をassert。993/1024でN=16、63/64でN=8、1023/1024でN=1もassert。
+- run4_regression.py は既存run4台帳の先頭・中間・末尾を比較する。これ自体は旧コードと同じ枝なので、次の合成対照が必須。
+- 追加：gap2_analysis/synthetic_preflight.py。封印を使わない合成のλ区間 [1/2,1/2+1/1600] と可変t_e=993/1024・63/64で双方の門を実行し、seedとGt箱の区間交差、分割・判定一致を検査する。NOT_EVIDENCE。**まだ数値実行していない。**
 
-```
-cd <implementation-checkout>
-python -m gap2_producer.driver --static-preflight
-python -m gap2_checker.driver --static-preflight
-python -m compileall -q gap1_producer gap1_checker gap2_analysis gap2_producer gap2_checker
-```
+## F4〜F6
 
-**Run4 regression (after chat static audit, with frozen run4 ledgers only):**
+- 出力台帳をpersistence.Ledgerによるレコード単位のSHA256連鎖追記に変更。異常時はABORT/NOT_EVIDENCEを出力。自動再開は行わない。
+- 資源の検査は全履歴の反復再直列化を廃止し、ファイルサイズと加算カウンタで実行。CPU48 core-hours、RAM32GiB、出力10GiB、セル上限1,048,576、ノード数124×15を維持。
+- λ二分深さ0〜3はC1bの親が既に持っているrefinement_depthとは別。各封印親のλ区間を深さ0として再起算。子の最小幅はその親幅の1/8であり、親のt_eを継承する。右側子優先。
 
-```
-python -m gap2_analysis.run4_regression --role producer --run4-ledger <RUN4_PRODUCER_LEDGER>
-python -m gap2_analysis.run4_regression --role checker --run4-ledger <RUN4_CHECKER_LEDGER>
-```
+## F7（推奨・保留）
 
-Each command recomputes numerical integrals; no regression command was launched while preparing this commit.
+c1b_receipt_extract.json のスキーマ別件数照合は未実装。封印台帳をFREEZE前に読まない契約を優先した。accepted 159、clamped 35、unclamped 124は両系統のハッシュ連鎖台帳で照合する。抽出表の「空でない辞書」検査を件数検査済みと主張しない。FREEZE前に原典のschemaを監査し、別途実装してよい。
 
-**Full execution is prohibited without a real Judge FREEZE ruling.** The new driver rejects unapproved execution, requiring a SHA-matched Judge ruling file containing the explicit FREEZE and execution authorization, plus an explicit opt-in environment variable. Do not treat this interface as an authorization to run; chat audits the implementation, regression and L0 contract before Judge decides.
+## 実施済み・未実施
 
-The signed right-exterior interval is validated independently against both sealed C1b ledgers at authorized L0(c). A missing piece is a **FAIL**, not an inferred certification or an automatic fallback. Any later adjustment to schema/implementation must be reviewed in a NEW version/commit; no silent modification of this submitted commit.
+実施：静的コンパイル、producer/checker静的preflight、ソース変更範囲のAST比較（差分チェック）。
+未実施：数値回帰、合成区画での数値対照、封印台帳L0(c)(d)、本走、Judge FREEZE。
 
-**D6 V19:** chat paper/symbolic audit of C1/C2/G0E1 endpoint lemmas 4/4 PASS, ZIP SHA256 `ba2872915ee55ee7dbbe1871dec0ca4751240767fef82b441951b6263b53d424`. C1c/C0/C1d lemmas remain outside this step.
+### chat差分監査後のpreflight
 
-**Mathematical status:** C gap 2 still OPEN; D-OB global OPEN.
+run4回帰（公開済みrun4台帳のみ）：
+python -m gap2_analysis.run4_regression --role producer --run4-ledger <RUN4_PRODUCER>
+python -m gap2_analysis.run4_regression --role checker --run4-ledger <RUN4_CHECKER>
+
+合成対照：
+python -m gap2_analysis.synthetic_preflight --role producer --output <PRODUCER_JSON>
+python -m gap2_analysis.synthetic_preflight --role checker --output <CHECKER_JSON>
+python -m gap2_analysis.synthetic_preflight --compare --producer <PRODUCER_JSON> --checker <CHECKER_JSON>
+
+Judge FREEZE後、producer/checker本走が共に完了した後の比較：
+python -m gap2_analysis.lineage_compare --producer-run <RUN_PRODUCER> --checker-run <RUN_CHECKER> --output <RESULT_JSON>
+
+**この文書、実装commit、静的preflightはFREEZE・本走の許可ではない。空白② OPEN / D-OB global OPEN。**

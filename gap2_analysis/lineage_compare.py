@@ -1,0 +1,229 @@
+"""C gap 2 independent-lineage comparison; fail-closed, exact rational checks.
+
+Only reads run outputs (never C1b sealed inputs). A single-lineage PASS is
+always NOT_EVIDENCE. This is an independent coverage/consistency checker,
+not a second implementation of the numerical g_box or gt_box.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+from collections import defaultdict
+from fractions import Fraction
+from pathlib import Path
+
+from gap1_analysis.c1b_resumable_driver import Ledger
+
+EXPECTED_PARENTS = 124
+
+
+def stop(message):
+    raise RuntimeError("C_GAP2_LINEAGE_COMPARE_FAIL:" + message)
+
+
+def sha256(path):
+    with path.open("rb") as fp:
+        return hashlib.file_digest(fp, "sha256").hexdigest()
+
+
+def exact(value):
+    if not isinstance(value, str):
+        stop("INVALID_EXACT_FRACTION")
+    try:
+        return Fraction(value)
+    except (TypeError, ValueError, ZeroDivisionError):
+        stop("INVALID_EXACT_FRACTION")
+
+
+def read_lineage(run_dir, role):
+    manifest_path = run_dir / "manifest.json"
+    ledger_path = run_dir / "ledger.jsonl"
+    m = json.loads(manifest_path.read_text())
+    manifest_sha256 = sha256(manifest_path)  # reported in the cross-lineage verdict
+    if m.get("role") != role or m.get("schema") != "C_GAP2_V4R2_RUN_V1":
+        stop("MANIFEST_SCHEMA:" + role)
+    if m.get("status") != "CANDIDATE_NOT_JUDGE_ACCEPTED":
+        stop("LINEAGE_NOT_COMPLETED:" + role)
+    if m.get("ledger_sha256") != sha256(ledger_path):
+        stop("LEDGER_SHA256:" + role)
+    if m.get("ledger_bytes") != ledger_path.stat().st_size:
+        stop("LEDGER_BYTES:" + role)
+    if m.get("identity_before") != m.get("identity_after"):
+        stop("RUNTIME_IDENTITY_MISMATCH:" + role)
+    identity = m.get("identity_before")
+    if not isinstance(identity, dict) or identity.get("clean_status") is not True:
+        stop("RUNTIME_IDENTITY_MISSING:" + role)
+    ledger = Ledger(ledger_path)  # validates run4-style SHA-256 chain
+    if len(ledger.records) < 3:
+        stop("LEDGER_TOO_SHORT:" + role)
+    header, *body = ledger.records
+    if header["record_type"] != "header" or body[-1]["record_type"] != "segment_end":
+        stop("LEDGER_FORMAT:" + role)
+    if body[-1]["payload"].get("reason") != "COMPLETED":
+        stop("SEGMENT_NOT_COMPLETED:" + role)
+    if header["payload"].get("identity_before") != identity:
+        stop("LEDGER_HEADER_IDENTITY:" + role)
+    parents = header["payload"].get("parents")
+    if not isinstance(parents, list) or len(parents) != EXPECTED_PARENTS:
+        stop("HEADER_PARENT_COUNT:" + role)
+    if m.get("parents") != parents or m.get("accepted_parent_slabs") != EXPECTED_PARENTS:
+        stop("MANIFEST_PARENT_COUNT:" + role)
+    if header["payload"].get("sealed_input_sha256") != m.get("input_sha256"):
+        stop("INPUT_PIN_MISMATCH:" + role)
+    if header["payload"].get("judge_ruling_sha256") != m.get("judge_ruling_sha256"):
+        stop("JUDGE_PIN_MISMATCH:" + role)
+    if any(x["record_type"] != "slab_record" for x in body[:-1]):
+        stop("NON_SLAB_RECORD:" + role)
+    recs = [x["payload"] for x in body[:-1]]
+    if m.get("attempted") != len(recs):
+        stop("ATTEMPTED_COUNT_MISMATCH:" + role)
+    return m, parents, recs, manifest_sha256
+
+
+def validate_tree(parents, recs, role):
+    indexed = defaultdict(list)
+    for x in recs:
+        parent_id = x.get("parent_slab_id")
+        if not isinstance(parent_id, str):
+            stop("PARENT_ID_MISSING:" + role)
+        indexed[parent_id].append(x)
+    lookup = {p["parent_id"]: p for p in parents}
+    if len(lookup) != len(parents) or set(indexed) != set(lookup):
+        stop("PARENT_SET_MISMATCH:" + role)
+    report = []
+    for parent_id, p in lookup.items():
+        ll, lr, te = exact(p["lambda_lo"]), exact(p["lambda_hi"]), exact(p["t_e"])
+        if not ll < lr or not Fraction(31, 32) <= te < 1:
+            stop("PARENT_DOMAIN:" + parent_id)
+        coarse = int(p["coarse_index"])
+        todo = [(0, ll, lr)]  # LIFO; right child first
+        leaves = []
+        max_seed, max_cum = None, None
+        for record in indexed[parent_id]:
+            if not todo:
+                stop("EXTRA_CHILD:" + parent_id)
+            depth, left, right = todo.pop()
+            slab = record.get("slab", {})
+            if (int(slab.get("coarse_index", -1)) != coarse
+                    or int(slab.get("refinement_depth", -1)) != depth
+                    or exact(slab.get("lambda_lo")) != left
+                    or exact(slab.get("lambda_hi")) != right):
+                stop("TREE_OR_SLAB_ORDER:" + parent_id)
+            if exact(record.get("t_e")) != te:
+                stop("CHILD_SEED_NOT_INHERITED:" + parent_id)
+            ev = record.get("evidence", {})
+            if exact(ev.get("endpoint_seed_t")) != te or ev.get("endpoint_work") != record.get("work"):
+                stop("EVIDENCE_SEED_WORK_MISMATCH:" + parent_id)
+            # Inconclusive internal nodes are allowed if they REFINE and
+            # all descendant ACCEPT leaves independently certify the sign.
+            # Their seed or cumulative bound may legitimately be unavailable.
+            seed_raw = ev.get("endpoint_seed_g_upper")
+            cum_raw = ev.get("endpoint_cumulative_mvt_upper")
+            decision = record.get("decision")
+            if decision == "ACCEPT":
+                seed, cum = exact(seed_raw), exact(cum_raw)
+                if not seed < 0 or not cum < 0:
+                    stop("POSITIVE_ACCEPT:" + parent_id)
+                max_seed = seed if max_seed is None else max(max_seed, seed)
+                max_cum = cum if max_cum is None else max(max_cum, cum)
+            if decision == "ACCEPT":
+                if ev.get("endpoint_pass") is not True or ev.get("endpoint_reason") != "PASS":
+                    stop("ACCEPT_WITHOUT_GATE:" + parent_id)
+                leaves.append((left, right))
+            elif decision == "REFINE" and depth < 3:
+                mid = (left + right) / 2
+                todo.extend([(depth + 1, left, mid), (depth + 1, mid, right)])
+            else:
+                stop("ABORT_OR_INVALID_DECISION:" + parent_id)
+        if todo:
+            stop("MISSING_LEAF:" + parent_id)
+        leaves.sort()
+        if not leaves or leaves[0][0] != ll or leaves[-1][1] != lr or any(
+                a[1] != b[0] for a, b in zip(leaves, leaves[1:])):
+            stop("PARENT_COVERAGE_HOLE:" + parent_id)
+        if not max_seed < 0 or not max_cum < 0:
+            stop("FINAL_SIGN_NOT_NEGATIVE:" + parent_id)
+        report.append({
+            "parent_id": parent_id, "lambda_lo": str(ll), "lambda_hi": str(lr),
+            "t_e": str(te), "accepted_leaves": len(leaves),
+            "worst_seed_upper": str(max_seed), "worst_cumulative_upper": str(max_cum),
+            "accepted_intervals": [[str(a), str(b)] for a, b in leaves],
+        })
+    return report
+
+
+def compare(producer_dir, checker_dir):
+    pm, pp, pr, p_manifest_sha = read_lineage(producer_dir, "producer")
+    cm, cp, cr, c_manifest_sha = read_lineage(checker_dir, "checker")
+    for key in ("input_sha256", "judge_ruling_sha256", "parents",
+                "expected_parent_slabs", "accepted_parent_slabs"):
+        if pm.get(key) != cm.get(key):
+            stop("LINEAGE_PIN_OR_PARENT_MISMATCH:" + key)
+    # The code/environment/commit must be identical except for the respective
+    # runtime import closure (different kernel/gating modules are expected).
+    p_identity, c_identity = pm["identity_before"], cm["identity_before"]
+    for key in ("head", "direct_parent", "frozen_grandparent",
+                "changed_13_plus_new", "current_blobs_and_sha256",
+                "run4_frozen_25_blobs", "python", "python_executable",
+                "flint_version", "mpmath_version", "platform"):
+        if p_identity.get(key) != c_identity.get(key):
+            stop("LINEAGE_RUNTIME_MISMATCH:" + key)
+    p_report = validate_tree(pp, pr, "producer")
+    c_report = validate_tree(cp, cr, "checker")
+    if {r["parent_id"] for r in p_report} != {r["parent_id"] for r in c_report}:
+        stop("PARENT_SET_DIFFER")
+    checkers = {r["parent_id"]: r for r in c_report}
+    rows = []
+    for prow in p_report:
+        crow = checkers[prow["parent_id"]]
+        if (prow["lambda_lo"], prow["lambda_hi"], prow["t_e"]) != (
+                crow["lambda_lo"], crow["lambda_hi"], crow["t_e"]):
+            stop("PARENT_T_E_OR_DOMAIN_DIFFER:" + prow["parent_id"])
+        rows.append({
+            "parent_id": prow["parent_id"], "lambda_lo": prow["lambda_lo"],
+            "lambda_hi": prow["lambda_hi"], "t_e": prow["t_e"],
+            "producer_accepted": prow["accepted_leaves"],
+            "checker_accepted": crow["accepted_leaves"],
+            "producer_worst_seed_upper": prow["worst_seed_upper"],
+            "checker_worst_seed_upper": crow["worst_seed_upper"],
+            "producer_worst_cumulative_upper": prow["worst_cumulative_upper"],
+            "checker_worst_cumulative_upper": crow["worst_cumulative_upper"],
+            "producer_covered": True, "checker_covered": True,
+            "both_lineages_pass": True,
+        })
+    return {
+        "schema": "C_GAP2_CROSS_LINEAGE_V1",
+        "verdict": "COMPARE_PASS_NOT_JUDGE_CLOSED",
+        "parent_count": len(rows),
+        "producer_manifest_sha256": p_manifest_sha,
+        "checker_manifest_sha256": c_manifest_sha,
+        "producer_ledger_sha256": pm["ledger_sha256"],
+        "checker_ledger_sha256": cm["ledger_sha256"],
+        "global_worst": {
+            "producer_seed_upper": str(max(Fraction(r["producer_worst_seed_upper"]) for r in rows)),
+            "checker_seed_upper": str(max(Fraction(r["checker_worst_seed_upper"]) for r in rows)),
+            "producer_cumulative_upper": str(max(Fraction(r["producer_worst_cumulative_upper"]) for r in rows)),
+            "checker_cumulative_upper": str(max(Fraction(r["checker_worst_cumulative_upper"]) for r in rows)),
+        },
+        "rows": rows,
+    }
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--producer-run", type=Path, required=True)
+    ap.add_argument("--checker-run", type=Path, required=True)
+    ap.add_argument("--output", type=Path, required=True)
+    a = ap.parse_args()
+    result = compare(a.producer_run, a.checker_run)
+    if a.output.exists():
+        stop("OUTPUT_ALREADY_EXISTS")
+    a.output.parent.mkdir(parents=True, exist_ok=True)
+    data = json.dumps(result, sort_keys=True, separators=(",", ":"), ensure_ascii=True) + "\n"
+    a.output.write_text(data)
+    print(result["verdict"], "parents", result["parent_count"])
+
+
+if __name__ == "__main__":
+    main()
