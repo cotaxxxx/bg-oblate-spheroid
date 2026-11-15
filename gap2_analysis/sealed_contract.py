@@ -186,9 +186,10 @@ def _receipt_count_candidates(receipt):
     """F7: derive count candidates by *meaning* of receipt extract keys.
 
     Schema may nest producer/checker summaries. No sealed data is inspected
-    before Judge FREEZE. Missing/unrecognised count keys are FAIL-CLOSED.
-    Use only count fields or explicit count-bearing collections; do not
-    mistake numeric work totals or a bool for a slab count.
+    before Judge FREEZE. These names are HEURISTIC AUXILIARY SIGNALS, never
+    certificate requirements. Missing/unrecognised/mismatching candidates
+    are merely logged for post-run chat review; only ledger counts are gated.
+    Ignore noninteger scalars (including bools) and use list length.
     """
     counts = {"accepted": [], "right_clamped": []}
     def token(name):
@@ -238,36 +239,52 @@ def _receipt_count_candidates(receipt):
 
 
 def verify_receipt_extract_counts(receipt, producer, checker):
-    """F7: receipt counts must independently agree with BOTH sealed ledgers.
+    """F7: NON-BLOCKING auxiliary receipt count inventory.
 
-    This is a fail-closed schema-tolerant parser. An ambiguous, missing or
-    unsupported receipt schema forces a code audit; never infer 159/35 from
-    the fixed expectations alone.
+    The receipt structure is not inspected until authorized L0(c).
+    Candidate key names could refer to intermediate accepted *boxes*, not
+    accepted slabs. Never gate L0(c) on these guessed names or counts.
+
+    In contrast, both independently hash-chained C1b ledgers still MUST
+    certify 159 accepted, 35 right-clamped, 124 unclamped (strict).
     """
     counts = _receipt_count_candidates(receipt)
-    producer_accepted, checker_accepted = len(producer), len(checker)
-    producer_clamped = sum(int(v[1]) for v in producer.values())
-    checker_clamped = sum(int(v[1]) for v in checker.values())
-    if (producer_accepted != checker_accepted or
-            producer_clamped != checker_clamped):
+    pa, ca = len(producer), len(checker)
+    pc = sum(int(v[1]) for v in producer.values())
+    cc = sum(int(v[1]) for v in checker.values())
+    if pa != ca or pc != cc:
         fail("RECEIPT_LEDGER_LINEAGE_COUNT_MISMATCH")
-    for field, expected in (
-        ("accepted", producer_accepted),
-        ("right_clamped", producer_clamped),
-    ):
-        found = counts[field]
-        if not found:
-            fail("RECEIPT_EXTRACT_COUNT_SCHEMA_OPEN:" + field)
-        if any(actual != expected for _,actual in found):
-            fail("RECEIPT_EXTRACT_COUNT_MISMATCH:" + field)
-    if producer_accepted != EXPECTED_ACCEPTED or producer_clamped != EXPECTED_CLAMPED:
-        fail("RECEIPT_EXTRACT_EXPECTATION_MISMATCH")
+    if pa != EXPECTED_ACCEPTED or pc != EXPECTED_CLAMPED:
+        fail("LEDGER_EXPECTATION_MISMATCH")
+    if pa - pc != EXPECTED_UNCLAMPED:
+        fail("LEDGER_UNCLAMPED_COUNT_MISMATCH")
+
+    def inventory(label, expected):
+        rows = [
+            {"path": path, "observed_value": value, "matches_ledger": value == expected}
+            for path, value in counts[label]
+        ]
+        status = (
+            "NOT_FOUND" if not rows else
+            "ALL_MATCH" if all(row["matches_ledger"] for row in rows) else
+            "NONE_MATCH" if all(not row["matches_ledger"] for row in rows) else
+            "MIXED_MATCH"
+        )
+        return {
+            "expected_from_two_verified_ledgers": expected,
+            "candidate_count": len(rows),
+            "candidates": rows,
+            "auxiliary_status": status,
+        }
+
     return {
-        "accepted_count": producer_accepted,
-        "right_clamped_count": producer_clamped,
-        "accepted_count_receipt_paths": [path for path,_ in counts["accepted"]],
-        "right_clamped_count_receipt_paths": [path for path,_ in counts["right_clamped"]],
-        "verdict": "RECEIPT_EXTRACT_AND_TWO_LEDGER_COUNTS_MATCH",
+        "schema": "C_GAP2_F7_AUXILIARY_INVENTORY_V1",
+        "gate": "NON_BLOCKING_RECEIPT_HEURISTICS",
+        "ledger_count_verdict": "BOTH_LINEAGES_MATCH_PINNED_COUNTS",
+        "accepted": inventory("accepted", pa),
+        "right_clamped": inventory("right_clamped", pc),
+        "unclamped_from_ledger": pa - pc,
+        "receipt_interpretation": "POST_RUN_CHAT_REVIEW_REQUIRED",
     }
 
 
@@ -291,9 +308,9 @@ def load_verified_parents(sealed_root: Path):
     replay_accepted = {key(x): x for x in replay if x.get("decision") == "ACCEPT"}
     if set(replay_accepted) != set(p):
         fail("LEDGER_REPLAY_MISMATCH")
+    # The extract is SHA-pinned above. Its UNKNOWN JSON schema must never
+    # prevent entry into L0(c); candidate names are auxiliary metadata only.
     receipt = json.loads((sealed_root / "c1b_receipt_extract.json").read_text())
-    if not isinstance(receipt, dict) or not receipt:
-        fail("RECEIPT_EXTRACT_SCHEMA_OPEN")
     receipt_counts = verify_receipt_extract_counts(receipt, p, c)
 
     parents = []

@@ -10,9 +10,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 PARENT = "26d81e1049340d44ef7f08ae8e17d0692983395b"
-BASE_NEW = "3bd5113e7d26e2860ddb8228904d977842aef541"
-PREVIOUS_NEW = "ff07e097c098ace4051b04b76d410713fb59490a"
-PREVIOUS_PREVIOUS_NEW = "45617d0ad8aa5c61cf858556791b38794929f9a7"
+
+# Exactly the changed path set relative to frozen run4:
+# original 13-file implementation plus four audited follow-up additions.
+# This protects scope without forcing a new intermediate-commit literal pin.
 
 EXPECTED_CHANGED = frozenset({
     "gap1_producer/global_axial_c1b_kernel.py",
@@ -28,6 +29,10 @@ EXPECTED_CHANGED = frozenset({
     "gap2_checker/driver.py",
     "gap2_producer/__init__.py",
     "gap2_producer/driver.py",
+    "gap2_analysis/lineage_compare.py",
+    "gap2_analysis/runtime_identity.py",
+    "gap2_analysis/synthetic_preflight.py",
+    "gap2_analysis/end_to_end_preflight.py",
 })
 
 RUN4_SEVEN = {
@@ -55,21 +60,23 @@ def files_sha256(path):
 def runtime_identity(kernel):
     """Snapshot before & after. Rejected unless working tree AND imports are pinned."""
     head = git("rev-parse", "HEAD")
-    expected_parent = git("rev-parse", "HEAD^")
-    if expected_parent != BASE_NEW:
-        raise RuntimeError("GAP2_IMPLEMENTATION_PARENT_MISMATCH")
-    previous_parent = git("rev-parse", BASE_NEW + "^")
-    previous_previous_parent = git("rev-parse", BASE_NEW + "^^")
-    original_parent = git("rev-parse", BASE_NEW + "^^^")
-    if (previous_parent != PREVIOUS_NEW
-            or previous_previous_parent != PREVIOUS_PREVIOUS_NEW
-            or original_parent != PARENT):
-        raise RuntimeError("RUN4_PARENT_MISMATCH")
+    direct_parent = git("rev-parse", "HEAD^")
+    # Judge FREEZE will pin HEAD. Require frozen run4 as an ancestor,
+    # independent of the number of preceding implementation revisions.
+    try:
+        git("merge-base", "--is-ancestor", PARENT, head)
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError("RUN4_FROZEN_COMMIT_NOT_ANCESTOR") from exc
+    original_parent = PARENT
     if git("status", "--porcelain=v1", "--untracked-files=all"):
         raise RuntimeError("RUNTIME_WORKTREE_NOT_CLEAN")
     changed = set(git("diff", "--name-only", PARENT, "HEAD").splitlines())
-    if not EXPECTED_CHANGED.issubset(changed):
-        raise RuntimeError("RUNTIME_ORIGINAL_13_FILES_MISSING")
+    if changed != EXPECTED_CHANGED:
+        raise RuntimeError(
+            "RUNTIME_CHANGED_FILE_SET_MISMATCH "
+            f"missing={sorted(EXPECTED_CHANGED - changed)} "
+            f"extra={sorted(changed - EXPECTED_CHANGED)}"
+        )
     run4 = set(RUN4_SEVEN) | set(kernel.GAP1_IMPORT_CLOSURE_17) | set(kernel.GAP1_READ_ONLY_PINS)
     if len(run4) != 25:
         raise RuntimeError("RUN4_IMPORT_CLOSURE_COUNT_MISMATCH")
@@ -118,7 +125,7 @@ def runtime_identity(kernel):
         imported[name] = {"path": relative_name, **entry}
     return {
         "head": head,
-        "direct_parent": expected_parent,
+        "direct_parent": direct_parent,
         "frozen_grandparent": original_parent,
         "clean_status": True,
         "changed_13_plus_new": sorted(changed),

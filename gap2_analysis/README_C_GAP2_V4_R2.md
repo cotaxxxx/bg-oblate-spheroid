@@ -28,9 +28,9 @@ producer/checkerのmanifest・台帳SHA256とrun4方式のhash chainを検査。
 - 資源の検査は全履歴の反復再直列化を廃止し、ファイルサイズと加算カウンタで実行。CPU48 core-hours、RAM32GiB、出力10GiB、セル上限1,048,576、ノード数124×15を維持。
 - λ二分深さ0〜3はC1bの親が既に持っているrefinement_depthとは別。各封印親のλ区間を深さ0として再起算。子の最小幅はその親幅の1/8であり、親のt_eを継承する。右側子優先。
 
-## F7（実装追加・実物の件数照合はFREEZE後）
+## F7（非停止の補助記録、実物はFREEZE後に確認）
 
-c1b_receipt_extract.json の件数照合処理は実装済み。ただし封印台帳の読込は禁止されているため、実物の抽出表スキーマ・実際の件数照合はFREEZE後のL0(c)まで未検証。既知のaccepted 159、right_clamped 35のラベルに対応する件数が見つからない場合はFAIL-CLOSED。両系統のハッシュ連鎖台帳からも独立に件数を数える。
+c1b_receipt_extract.json はSHA固定済みだが、件数キーの意味は未確認。受理159・右clamp35・未clamp124は両系統のハッシュ連鎖台帳から厳密に検証し、抽出表から見つかる候補の経路・値・一致状態は補助情報として記録する。候補ゼロ・不一致・未知schemaを理由にL0(c)を停止しない。抽出表の意味は本走後にchatが検収する。
 
 ## 実施済み・未実施
 
@@ -61,7 +61,7 @@ python -m gap2_analysis.lineage_compare --producer-run <RUN_PRODUCER> --checker-
 - G3：系統共通のファイル pin と、系統別に実際に import された閉包を別辞書で記録。後者は自分の系統内で前後照合。直親 ff07e09、祖父 45617d0、run4 原親 26d81e1 の関係を固定。
 - G4：比較器が N・Δt・各 t 箱・Gt の upper_j と contribution を厳密分数で再計算し、seed_upper + Δt Σ max(0,U_j) <= recorded_cumulative_upper < 0 を独立に検査。最後の corner dispatch も照合。
 - G5：ハッシュ連鎖そのものの検証を維持し、header・segment_end直後の lscpu_raw_trace のみ数学の台帳から除外。それ以外の未知レコードはFAIL。
-- F7：receipt_extract.jsonのacceptedおよびright_clamped件数を抽出するコードを追加し、双方の台帳から数えた件数と照合する。公開資料だけでは実物のキー構造を確定できないため、未対応schema・件数欠落・不一致はFAIL-CLOSED。本物のreceipt検査はFREEZE後のL0(c)まで未実施。
+- F7：receipt_extract.jsonのaccepted・right_clamped候補（経路、値、台帳との一致・不一致・未発見）をmanifestのreceipt_countsに記録するだけとした。推測したキー名の不一致では停止せず、chatの本走後検収へ渡す。台帳の159/35/124検証は従来どおり厳格。
 
 ### G2：chat差分監査後にのみ実行するNOT_EVIDENCE preflight
 
@@ -83,8 +83,17 @@ H1：SEALEDのcross-lineage比較では両manifestの入力pinが互いに等し
 
     python -m gap2_analysis.lineage_compare --producer-run <RUN_PRODUCER> --checker-run <RUN_CHECKER> --judge-ruling-sha256 <EXACT_64_HEX_SHA_OF_JUDGE_FREEZE_RULING> --output <NEW_RESULT_JSON>
 
-F7：sealed_contract.verify_receipt_extract_countsは公開C1b machine receiptにあるaccepted 159とright-clamped 35のラベル群から件数を抽出し、封印producer/checker両台帳と一致させる。未知の形式・該当key不在・期待件数不一致はPASSせずSTOP。原本の中身をFREEZE前に調べたわけではなく、実証はL0(c)のときに行う。
+F7：sealed_contract.verify_receipt_extract_countsはaccepted/right-clampedらしいキーを候補としてのみ抽出する。候補ごとのpath・observed_value・matches_ledgerと、NOT_FOUND/ALL_MATCH/NONE_MATCH/MIXED_MATCHをmanifest.receipt_countsに格納。未知schema・候補不在・不一致は停止理由にならない。真正なaccepted 159、clamped 35、unclamped 124はC1bの独立ハッシュ連鎖台帳から厳格検査し、抽出表の意味付けは本走後chatが検収する。
 
-runtime_identityの親鎖は次の順に更新：当commit → 3bd5113 → ff07e09 → 45617d0 → 26d81e1（凍結run4）。今回も必ず1コミットで提出する。
+runtime_identityは途中のcommitを固定しない。凍結run4の26d81e1がHEADの祖先であることをgit merge-base --is-ancestorで検査し、run4から変更された17ファイル（当初13＋監査追加4）と宣言集合の完全一致を要求する。HEAD SHAと直親は実行記録に残す。最終HEAD SHAはJudge FREEZEで固定する。
 
 **今回の新実装の静的模擬検査だけPASS。最終差分のchat監査待ち。数値preflightはまだ禁止、L0(c)・本走も未実施。**
+
+
+## 7b337a0後の最終訂正（chat差分監査 PASS待ち）
+
+監査記録 CHAT_AUDIT_C_GAP2_IMPL_7B337A0_20261115.md に従い、F7の未確認スキーマを非停止の補助記録に変更。receipt_count候補は観測値・経路・台帳との比較状態としてmanifestに残す。L0(c)の厳格条件はC1b封印4 SHA、producer/checker/replayの記録、受理159・右clamp35・未clamp124の台帳検査。receipt候補値の不一致のみで計算を止めない。H1のJudge SHAと封印4 SHA固定は維持する。
+
+今回の修正は7b337a0を直親とする単一commitにする。凍結run4 26d81e1の祖先性、変更ファイル17件の完全一致、HEAD SHAによる運用pinを使う。
+
+新コミットのchat差分監査PASS後のみ数値preflight一式を実行。すべてNOT_EVIDENCE。Judge FREEZE前にはL0(c)(d)と空白②本走をしない。
